@@ -1,0 +1,10 @@
+version: '1.0'
+services:
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - 9003:9003
+    volumes:
+      - .:/server

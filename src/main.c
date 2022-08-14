@@ -8,7 +8,7 @@ void handle_signal(int sig);
 int main(int argc, char *argv[])
 {
     signal(SIGINT, handle_signal);
-    create_server(server_socket, "127.0.0.1", 9003, 1);
+    create_server(server_socket, "0.0.0.0", 9003, 1);
     return 0;
 }
 
