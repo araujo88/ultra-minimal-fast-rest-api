@@ -3,10 +3,10 @@
 
 #define NUM_MODELS 1
 
-typedef struct _user {
-    unsigned int id;
-    char name[200];
-    char surname[200];
+typedef struct _user
+{
+    char *name;
+    char *surname;
 } user;
 
 #endif

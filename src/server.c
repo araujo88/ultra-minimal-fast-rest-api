@@ -13,7 +13,7 @@ void create_server(int server_socket, char *ip, int port, int max_connections)
     struct sockaddr_in server_address;
     server_address.sin_family = AF_INET;
     server_address.sin_port = htons(port);
-    server_address.sin_addr.s_addr = inet_addr("127.0.0.1");
+    server_address.sin_addr.s_addr = inet_addr(ip);
 
     printf("Binding socket ...\n");
     check_bind(server_socket, &server_address);
@@ -26,6 +26,19 @@ void create_server(int server_socket, char *ip, int port, int max_connections)
     printf("Creating tables...\n");
     create_table_user();
 
+    // --------------- create dummy database --------------- //
+    user user1;
+    user1.name = "John";
+    user1.surname = "Doe";
+
+    user user2;
+    user2.name = "Billy";
+    user2.surname = "Bob";
+
+    insert_user(user1);
+    insert_user(user2);
+    // --------------- end creating dummy database --------------- //
+
     printf("Waiting for incoming requests... (press Ctrl+C to quit)\n");
     while (true)
     {
@@ -35,7 +48,7 @@ void create_server(int server_socket, char *ip, int port, int max_connections)
         struct sockaddr_in *client_address = NULL;
 
         check_accept(server_socket, client_socket, (struct sockaddr *)client_address);
-        
+
         pthread_t t;
         pthread_create(&t, NULL, send_data, (void *)client_socket);
     }
@@ -89,15 +102,19 @@ void *send_data(void *client_socket)
 
     get_request(*(int *)client_socket, request);
 
-    for (i = 0; i < NUM_ROUTES; i++) {
-        if (strstr(request, routes[i]) != NULL) {
-            if (strstr(request, "GET / ") != NULL) {
+    for (i = 0; i < NUM_ROUTES; i++)
+    {
+        if (strstr(request, routes[i]) != NULL)
+        {
+            if (strstr(request, "GET / ") != NULL)
+            {
                 root(client_socket);
                 close(*(int *)client_socket);
                 free(client_socket);
                 pthread_exit(&self);
             }
-            else if (strstr(request, "GET /users ") != NULL) {
+            else if (strstr(request, "GET /users ") != NULL)
+            {
                 users(client_socket);
                 close(*(int *)client_socket);
                 free(client_socket);
@@ -114,6 +131,12 @@ void get_request(int client_socket, char *request)
     int i = 0;
     char client_message[BUFFER_SIZE];
 
+    char *current_date;
+    time_t t;
+    time(&t);
+    current_date = ctime(&t);
+    current_date[strcspn(current_date, "\n")] = 0;
+
     memset(client_message, 0, sizeof(client_message));
 
     if ((recv(client_socket, &client_message, sizeof(client_message), 0)) < 0)
@@ -123,11 +146,12 @@ void get_request(int client_socket, char *request)
         exit(1);
     }
 
-    while (client_message[i] != '\n') {
+    while (client_message[i] != '\n')
+    {
         strncat(request, &client_message[i], 1);
         i++;
     }
-
+    printf("[%s] - ", current_date);
     printf("%s\n", request);
     memset(client_message, 0, sizeof(client_message));
 }

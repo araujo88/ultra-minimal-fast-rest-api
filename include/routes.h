@@ -3,9 +3,8 @@
 
 #define NUM_ROUTES 2
 
-char *routes[NUM_ROUTES] = { 
+char *routes[NUM_ROUTES] = {
     "GET / ",
-    "GET /users"
-};
+    "GET /users"};
 
 #endif
