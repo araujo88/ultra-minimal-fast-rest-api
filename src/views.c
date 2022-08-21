@@ -2,7 +2,7 @@
 #include "../include/server.h"
 #include "../include/database.h"
 
-void root(void *client_socket)
+void root_view(void *client_socket)
 {
     char server_message[BUFFER_SIZE];
     char *content;
@@ -11,7 +11,7 @@ void root(void *client_socket)
     time(&t);
     current_date = ctime(&t);
     current_date[strcspn(current_date, "\n")] = 0;
-    content = "<html><body><h1>Hello from the server!</h1></body></html>";
+    content = "Hello world!";
     printf("[%s] - ", current_date);
     printf("\033[0;32mHTTP/1.0 200 OK\033[0m\n");
     sprintf(server_message, "HTTP/1.0 200 OK\nDate: %s\nContent-Type: text/html\nContent-Length: %ld\n\n%s", current_date, strlen(content), content);
@@ -19,23 +19,102 @@ void root(void *client_socket)
     memset(server_message, 0, sizeof(server_message));
 }
 
-void users(void *client_socket)
+void get_users_view(void *client_socket)
 {
     char server_message[BUFFER_SIZE];
-    char content[BUFFER_SIZE / 2] = "<html><body><h1>User list</h1>";
+    char content[BUFFER_SIZE / 2] = "";
     char *current_date;
+
     time_t t;
     time(&t);
     current_date = ctime(&t);
     current_date[strcspn(current_date, "\n")] = 0;
-    sprintf(content + strlen(content), "<table><tr>");
-    get_col_names(content + strlen(content));
-    sprintf(content + strlen(content), "</tr>");
-    get_users_string(content + strlen(content));
-    sprintf(content + strlen(content), "</table></body><html>");
+
+    get_users(content + strlen(content));
+
     printf("[%s] - ", current_date);
     printf("\033[0;32mHTTP/1.0 200 OK\033[0m\n");
     sprintf(server_message, "HTTP/1.0 200 OK\nDate: %s\nContent-Type: text/html\nContent-Length: %ld\n\n%s", current_date, strlen(content), content);
+    send(*(int *)client_socket, &server_message, sizeof(server_message), 0);
+    memset(server_message, 0, sizeof(server_message));
+}
+
+void get_user_view(void *client_socket, unsigned int id)
+{
+    char server_message[BUFFER_SIZE];
+    char content[BUFFER_SIZE / 2] = "";
+    char *current_date;
+
+    time_t t;
+    time(&t);
+    current_date = ctime(&t);
+    current_date[strcspn(current_date, "\n")] = 0;
+
+    get_user(id, content);
+
+    printf("[%s] - ", current_date);
+    printf("\033[0;32mHTTP/1.1 200 OK\033[0m\n");
+    sprintf(server_message, "HTTP/1.1 200 OK\nDate: %s\nContent-Type: application/json\nContent-Length: %ld\n\n%s", current_date, strlen(content), content);
+    send(*(int *)client_socket, &server_message, sizeof(server_message), 0);
+    memset(server_message, 0, sizeof(server_message));
+}
+
+void delete_user_view(void *client_socket, unsigned int id)
+{
+    char server_message[BUFFER_SIZE];
+    char content[BUFFER_SIZE / 2] = "";
+    char *current_date;
+
+    time_t t;
+    time(&t);
+    current_date = ctime(&t);
+    current_date[strcspn(current_date, "\n")] = 0;
+
+    delete_user(id, content);
+
+    printf("[%s] - ", current_date);
+    printf("\033[0;32mHTTP/1.1 200 OK\033[0m\n");
+    sprintf(server_message, "HTTP/1.1 200 OK\nDate: %s\nContent-Type: application/json\nContent-Length: %ld\n\n%s", current_date, strlen(content), content);
+    send(*(int *)client_socket, &server_message, sizeof(server_message), 0);
+    memset(server_message, 0, sizeof(server_message));
+}
+
+void update_user_view(void *client_socket, unsigned int id, user User)
+{
+    char server_message[BUFFER_SIZE];
+    char content[BUFFER_SIZE / 2] = "";
+    char *current_date;
+
+    time_t t;
+    time(&t);
+    current_date = ctime(&t);
+    current_date[strcspn(current_date, "\n")] = 0;
+
+    update_user(id, User, content);
+
+    printf("[%s] - ", current_date);
+    printf("\033[0;32mHTTP/1.1 200 OK\033[0m\n");
+    sprintf(server_message, "HTTP/1.1 200 OK\nDate: %s\nContent-Type: application/json\nContent-Length: %ld\n\n%s", current_date, strlen(content), content);
+    send(*(int *)client_socket, &server_message, sizeof(server_message), 0);
+    memset(server_message, 0, sizeof(server_message));
+}
+
+void create_user_view(void *client_socket, user User)
+{
+    char server_message[BUFFER_SIZE] = "";
+    char content[BUFFER_SIZE / 2];
+    char *current_date;
+
+    time_t t;
+    time(&t);
+    current_date = ctime(&t);
+    current_date[strcspn(current_date, "\n")] = 0;
+
+    create_user(User, content);
+
+    printf("[%s] - ", current_date);
+    printf("\033[0;32mHTTP/1.1 201 Created\033[0m\n");
+    sprintf(server_message, "HTTP/1.1 201 Created\nDate: %s\nContent-Type: application/json\nContent-Length: %ld\n\n%s", current_date, strlen(content), content);
     send(*(int *)client_socket, &server_message, sizeof(server_message), 0);
     memset(server_message, 0, sizeof(server_message));
 }

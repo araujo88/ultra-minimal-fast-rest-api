@@ -2,6 +2,7 @@
 #include "../include/views.h"
 #include "../include/routes.h"
 #include "../include/database.h"
+#include "../include/settings.h"
 
 void create_server(int server_socket, char *ip, int port, int max_connections)
 {
@@ -23,20 +24,18 @@ void create_server(int server_socket, char *ip, int port, int max_connections)
     open_database();
     check_version();
 
-    printf("Creating tables...\n");
     create_table_user();
 
     // --------------- create dummy database --------------- //
     user user1;
-    user1.name = "John";
-    user1.surname = "Doe";
+    strcpy(user1.name, "John");
+    strcpy(user1.surname, "Doe");
+    create_user(user1, NULL);
 
     user user2;
-    user2.name = "Billy";
-    user2.surname = "Bob";
-
-    insert_user(user1);
-    insert_user(user2);
+    strcpy(user2.name, "Billy");
+    strcpy(user2.surname, "Bob");
+    create_user(user2, NULL);
     // --------------- end creating dummy database --------------- //
 
     printf("Waiting for incoming requests... (press Ctrl+C to quit)\n");
@@ -49,8 +48,11 @@ void create_server(int server_socket, char *ip, int port, int max_connections)
 
         check_accept(server_socket, client_socket, (struct sockaddr *)client_address);
 
-        pthread_t t;
-        pthread_create(&t, NULL, send_data, (void *)client_socket);
+        if (check_client_ip(client_socket, (struct sockaddr *)client_address))
+        {
+            pthread_t t;
+            pthread_create(&t, NULL, send_data, (void *)client_socket);
+        }
     }
 }
 
@@ -98,9 +100,10 @@ void *send_data(void *client_socket)
 {
     int i;
     char request[BUFFER_SIZE];
+    char content[BUFFER_SIZE];
     pthread_t self = pthread_self();
 
-    get_request(*(int *)client_socket, request);
+    get_request(*(int *)client_socket, request, content);
 
     for (i = 0; i < NUM_ROUTES; i++)
     {
@@ -108,14 +111,118 @@ void *send_data(void *client_socket)
         {
             if (strstr(request, "GET / ") != NULL)
             {
-                root(client_socket);
+                root_view(client_socket);
+                close(*(int *)client_socket);
+                free(client_socket);
+                pthread_exit(&self);
+            }
+            else if (strstr(request, "GET /users/") != NULL)
+            {
+                int i = 0;
+                char id[256];
+                char *tmp;
+                strcpy(request, strstr(request, "GET /users/"));
+                tmp = request;
+                tmp = tmp + strlen("GET /users/");
+                while (tmp[i] != 'H')
+                {
+                    id[i] = tmp[i];
+                    i++;
+                }
+                get_user_view(client_socket, atoi(id));
+                close(*(int *)client_socket);
+                free(client_socket);
+                pthread_exit(&self);
+            }
+            else if (strstr(request, "POST /users") != NULL)
+            {
+                user User;
+                strcpy(request, strstr(request, "POST /users"));
+                strcpy(content, strstr(content, "name="));
+
+                char *token = strtok(content, "=&");
+
+                while (token != NULL)
+                {
+                    if (strcmp(token, "name") == 0)
+                    {
+                        token = strtok(NULL, "=&");
+                        strcpy(User.name, token);
+                    }
+                    if (strcmp(token, "surname") == 0)
+                    {
+                        token = strtok(NULL, "=&");
+                        strcpy(User.surname, token);
+                    }
+                    token = strtok(NULL, "=&");
+                }
+
+                create_user_view(client_socket, User);
+
+                close(*(int *)client_socket);
+                free(client_socket);
+                pthread_exit(&self);
+            }
+            else if (strstr(request, "PUT /users/") != NULL)
+            {
+                user User;
+                int i = 0;
+                char id[256];
+                char *tmp;
+                strcpy(request, strstr(request, "PUT /users/"));
+                tmp = request;
+                tmp = tmp + strlen("PUT /users/");
+                while (tmp[i] != 'H')
+                {
+                    id[i] = tmp[i];
+                    i++;
+                }
+                strcpy(content, strstr(content, "name="));
+
+                char *token = strtok(content, "=&");
+
+                while (token != NULL)
+                {
+                    if (strcmp(token, "name") == 0)
+                    {
+                        token = strtok(NULL, "=&");
+                        strcpy(User.name, token);
+                    }
+                    if (strcmp(token, "surname") == 0)
+                    {
+                        token = strtok(NULL, "=&");
+                        strcpy(User.surname, token);
+                    }
+                    token = strtok(NULL, "=&");
+                }
+
+                update_user_view(client_socket, atoi(id), User);
+
+                close(*(int *)client_socket);
+                free(client_socket);
+                pthread_exit(&self);
+            }
+            else if (strstr(request, "DELETE /users/") != NULL)
+            {
+                int i = 0;
+                char id[256];
+                char *tmp;
+                strcpy(request, strstr(request, "DELETE /users/"));
+                tmp = request;
+                tmp = tmp + strlen("DELETE /users/");
+                while (tmp[i] != 'H')
+                {
+                    id[i] = tmp[i];
+                    i++;
+                }
+                delete_user_view(client_socket, atoi(id));
                 close(*(int *)client_socket);
                 free(client_socket);
                 pthread_exit(&self);
             }
             else if (strstr(request, "GET /users ") != NULL)
             {
-                users(client_socket);
+                get_users_view(client_socket);
                 close(*(int *)client_socket);
                 free(client_socket);
                 pthread_exit(&self);
@@ -126,7 +233,7 @@ void *send_data(void *client_socket)
     pthread_exit(&self);
 }
 
-void get_request(int client_socket, char *request)
+void get_request(int client_socket, char *request, char *content)
 {
     int i = 0;
     char client_message[BUFFER_SIZE];
@@ -151,7 +258,48 @@ void get_request(int client_socket, char *request)
         strncat(request, &client_message[i], 1);
         i++;
     }
+
+    if (strstr(client_message, "Content-Type: application/x-www-form-urlencoded") != NULL)
+    {
+        strcpy(content, strstr(client_message, "Content-Type: application/x-www-form-urlencoded"));
+    }
+
     printf("[%s] - ", current_date);
     printf("%s\n", request);
     memset(client_message, 0, sizeof(client_message));
+}
+
+bool check_client_ip(int *client_socket, struct sockaddr *client_address)
+{
+    int i;
+    struct sockaddr_in *pV4Addr = (struct sockaddr_in *)&client_address;
+    struct in_addr ipAddr = pV4Addr->sin_addr;
+    char client_ip_address[INET_ADDRSTRLEN];
+    char server_message[BUFFER_SIZE];
+
+    char *current_date;
+    time_t t;
+    time(&t);
+    current_date = ctime(&t);
+    current_date[strcspn(current_date, "\n")] = 0;
+
+    inet_ntop(AF_INET, &ipAddr, client_ip_address, INET_ADDRSTRLEN);
+
+    for (i = 0; i < NUM_ALLOWED_HOSTS; i++)
+    {
+        if (strcmp(client_ip_address, ALLOWED_HOSTS[i]) == 0)
+        {
+            return true;
+        }
+    }
+
+    printf("[%s] - ", current_date);
+    printf("HTTP/1.1 403 Forbidden\n");
+
+    sprintf(server_message, "HTTP/1.1 403 Forbidden\nDate: %s\nContent-Type: text/html\nContent-Length: 0\n\n", current_date);
+    send(*(int *)client_socket, &server_message, sizeof(server_message), 0);
+
+    memset(server_message, 0, sizeof(server_message));
+
+    return false;
 }

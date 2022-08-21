@@ -24,4 +24,4 @@ $(OBJ_DIR):
 	mkdir $@
 
 clean:
-	rm -rf $(BIN_FILE) $(OBJ_DIR) $(TBN_DIR) *.db
+	rm -rf $(BIN_FILE) $(OBJ_DIR) $(TBN_DIR)

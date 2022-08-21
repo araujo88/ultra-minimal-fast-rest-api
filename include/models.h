@@ -3,10 +3,12 @@
 
 #define NUM_MODELS 1
 
+#define TABLE_NAME "Users"
+
 typedef struct _user
 {
-    char *name;
-    char *surname;
+    char name[256];
+    char surname[256];
 } user;
 
 #endif
