@@ -1,6 +1,5 @@
 #include "../include/views.h"
 #include "../include/server.h"
-#include "../include/database.h"
 
 void root_view(void *client_socket)
 {
@@ -30,7 +29,7 @@ void get_users_view(void *client_socket)
     current_date = ctime(&t);
     current_date[strcspn(current_date, "\n")] = 0;
 
-    get_users(content + strlen(content));
+    get_entries(content + strlen(content));
 
     printf("[%s] - ", current_date);
     printf("\033[0;32mHTTP/1.0 200 OK\033[0m\n");
@@ -50,7 +49,7 @@ void get_user_view(void *client_socket, unsigned int id)
     current_date = ctime(&t);
     current_date[strcspn(current_date, "\n")] = 0;
 
-    get_user(id, content);
+    get_entry(id, content);
 
     printf("[%s] - ", current_date);
     printf("\033[0;32mHTTP/1.1 200 OK\033[0m\n");
@@ -70,7 +69,7 @@ void delete_user_view(void *client_socket, unsigned int id)
     current_date = ctime(&t);
     current_date[strcspn(current_date, "\n")] = 0;
 
-    delete_user(id, content);
+    delete_entry(id, content);
 
     printf("[%s] - ", current_date);
     printf("\033[0;32mHTTP/1.1 200 OK\033[0m\n");
@@ -79,8 +78,9 @@ void delete_user_view(void *client_socket, unsigned int id)
     memset(server_message, 0, sizeof(server_message));
 }
 
-void update_user_view(void *client_socket, unsigned int id, user User)
+void update_user_view(void *client_socket, unsigned int id, model Model)
 {
+    char struct_string[NUM_COLS][STR_LEN];
     char server_message[BUFFER_SIZE];
     char content[BUFFER_SIZE / 2] = "";
     char *current_date;
@@ -90,7 +90,8 @@ void update_user_view(void *client_socket, unsigned int id, user User)
     current_date = ctime(&t);
     current_date[strcspn(current_date, "\n")] = 0;
 
-    update_user(id, User, content);
+    struct_to_string_array(&Model, struct_string);
+    update_entry(id, struct_string, content);
 
     printf("[%s] - ", current_date);
     printf("\033[0;32mHTTP/1.1 200 OK\033[0m\n");
@@ -99,8 +100,9 @@ void update_user_view(void *client_socket, unsigned int id, user User)
     memset(server_message, 0, sizeof(server_message));
 }
 
-void create_user_view(void *client_socket, user User)
+void create_user_view(void *client_socket, model Model)
 {
+    char struct_string[NUM_COLS][STR_LEN];
     char server_message[BUFFER_SIZE] = "";
     char content[BUFFER_SIZE / 2];
     char *current_date;
@@ -110,7 +112,8 @@ void create_user_view(void *client_socket, user User)
     current_date = ctime(&t);
     current_date[strcspn(current_date, "\n")] = 0;
 
-    create_user(User, content);
+    struct_to_string_array(&Model, struct_string);
+    create_entry(struct_string, content);
 
     printf("[%s] - ", current_date);
     printf("\033[0;32mHTTP/1.1 201 Created\033[0m\n");

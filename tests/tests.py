@@ -2,8 +2,11 @@ import requests
 
 BASE_URL = "http://localhost:9002/"
 
-data1 = {"name": "Giga", "surname": "Chad"}
-data2 = {"name": "John", "surname": "Smith"}
+data1 = {"name": "Giga", "surname": "Chad", "age": 29}
+data2 = {"name": "John", "surname": "Smith", "age": 33}
+
+r = requests.get(url=f"{BASE_URL}users")
+print(r.json())
 
 r = requests.post(url=f"{BASE_URL}users", data=data1)
 print(r.json())

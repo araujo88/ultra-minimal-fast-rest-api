@@ -45,7 +45,14 @@ Contains the server settings. Currently, the only setting is ALLOWED_HOSTS, whic
 
 Contains the database model. On this example, the model consists of a simple "user" table with fields "name" and "surname". Example of an user entry in JSON format:
 
-`{"Id": 1, "Name": "Giga", "Surname": "Chad"}`
+```
+{
+    "id": 1,
+    "name": "Giga",
+    "surname": "Chad",
+    "age": 29
+}
+```
 
 ### routes.h
 

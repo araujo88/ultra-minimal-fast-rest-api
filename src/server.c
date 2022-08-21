@@ -24,18 +24,15 @@ void create_server(int server_socket, char *ip, int port, int max_connections)
     open_database();
     check_version();
 
-    create_table_user();
+    create_table();
 
     // --------------- create dummy database --------------- //
-    user user1;
-    strcpy(user1.name, "John");
-    strcpy(user1.surname, "Doe");
-    create_user(user1, NULL);
 
-    user user2;
-    strcpy(user2.name, "Billy");
-    strcpy(user2.surname, "Bob");
-    create_user(user2, NULL);
+    char user1[NUM_COLS][STR_LEN] = {"John", "Doe", "30"};
+    create_entry(user1, NULL);
+    char user2[NUM_COLS][STR_LEN] = {"Billy", "Bob", "31"};
+    create_entry(user2, NULL);
+
     // --------------- end creating dummy database --------------- //
 
     printf("Waiting for incoming requests... (press Ctrl+C to quit)\n");
@@ -53,46 +50,6 @@ void create_server(int server_socket, char *ip, int port, int max_connections)
             pthread_t t;
             pthread_create(&t, NULL, send_data, (void *)client_socket);
         }
-    }
-}
-
-void check_socket(int server_socket)
-{
-    if (server_socket < 0)
-    {
-        perror("Socket failed: ");
-        printf("Error code: %d\n", errno);
-        exit(EXIT_FAILURE);
-    }
-}
-
-void check_bind(int server_socket, struct sockaddr_in *server_address)
-{
-    if ((bind(server_socket, (struct sockaddr *)server_address, sizeof(*server_address))) < 0)
-    {
-        perror("Bind failed");
-        printf("Error code: %d\n", errno);
-        exit(EXIT_FAILURE);
-    }
-}
-
-void check_listen(int server_socket, int num_connections)
-{
-    if ((listen(server_socket, num_connections)) < 0)
-    {
-        perror("Listen failed");
-        printf("Error code: %d\n", errno);
-        exit(EXIT_FAILURE);
-    }
-}
-
-void check_accept(int server_socket, int *client_socket, struct sockaddr *client_address)
-{
-    if ((*client_socket = accept(server_socket, (struct sockaddr *)client_address, (socklen_t *)sizeof(client_address))) < 0)
-    {
-        perror("Accept failed");
-        printf("Error code: %d\n", errno);
-        exit(EXIT_FAILURE);
     }
 }
 
@@ -136,28 +93,32 @@ void *send_data(void *client_socket)
             }
             else if (strstr(request, "POST /users") != NULL)
             {
-                user User;
+                model Model;
+                int i;
+                char field[512];
+                char model_string[NUM_COLS][STR_LEN];
+
+                sprintf(field, "%s=", TABLE_COLS[0][0]);
                 strcpy(request, strstr(request, "POST /users"));
-                strcpy(content, strstr(content, "name="));
+                strcpy(content, strstr(content, field));
 
                 char *token = strtok(content, "=&");
 
                 while (token != NULL)
                 {
-                    if (strcmp(token, "name") == 0)
+                    for (i = 0; i < NUM_COLS; i++)
                     {
-                        token = strtok(NULL, "=&");
-                        strcpy(User.name, token);
-                    }
-                    if (strcmp(token, "surname") == 0)
-                    {
-                        token = strtok(NULL, "=&");
-                        strcpy(User.surname, token);
+                        if (strcmp(token, TABLE_COLS[i][0]) == 0)
+                        {
+                            token = strtok(NULL, "=&");
+                            strcpy(model_string[i], token);
+                        }
                     }
                     token = strtok(NULL, "=&");
                 }
 
-                create_user_view(client_socket, User);
+                string_array_to_struct(&Model, model_string);
+                create_user_view(client_socket, Model);
 
                 close(*(int *)client_socket);
                 free(client_socket);
@@ -165,10 +126,14 @@ void *send_data(void *client_socket)
             }
             else if (strstr(request, "PUT /users/") != NULL)
             {
-                user User;
+                model Model;
                 int i = 0;
                 char id[256];
                 char *tmp;
+                char field[512];
+                char model_string[NUM_COLS][STR_LEN];
+
+                sprintf(field, "%s=", TABLE_COLS[0][0]);
                 strcpy(request, strstr(request, "PUT /users/"));
                 tmp = request;
                 tmp = tmp + strlen("PUT /users/");
@@ -177,26 +142,25 @@ void *send_data(void *client_socket)
                     id[i] = tmp[i];
                     i++;
                 }
-                strcpy(content, strstr(content, "name="));
+                strcpy(content, strstr(content, field));
 
                 char *token = strtok(content, "=&");
 
                 while (token != NULL)
                 {
-                    if (strcmp(token, "name") == 0)
+                    for (i = 0; i < NUM_COLS; i++)
                     {
-                        token = strtok(NULL, "=&");
-                        strcpy(User.name, token);
-                    }
-                    if (strcmp(token, "surname") == 0)
-                    {
-                        token = strtok(NULL, "=&");
-                        strcpy(User.surname, token);
+                        if (strcmp(token, TABLE_COLS[i][0]) == 0)
+                        {
+                            token = strtok(NULL, "=&");
+                            strcpy(model_string[i], token);
+                        }
                     }
                     token = strtok(NULL, "=&");
                 }
 
-                update_user_view(client_socket, atoi(id), User);
+                string_array_to_struct(&Model, model_string);
+                update_user_view(client_socket, atoi(id), Model);
 
                 close(*(int *)client_socket);
                 free(client_socket);
@@ -302,4 +266,44 @@ bool check_client_ip(int *client_socket, struct sockaddr *client_address)
     memset(server_message, 0, sizeof(server_message));
 
     return false;
+}
+
+void check_socket(int server_socket)
+{
+    if (server_socket < 0)
+    {
+        perror("Socket failed: ");
+        printf("Error code: %d\n", errno);
+        exit(EXIT_FAILURE);
+    }
+}
+
+void check_bind(int server_socket, struct sockaddr_in *server_address)
+{
+    if ((bind(server_socket, (struct sockaddr *)server_address, sizeof(*server_address))) < 0)
+    {
+        perror("Bind failed");
+        printf("Error code: %d\n", errno);
+        exit(EXIT_FAILURE);
+    }
+}
+
+void check_listen(int server_socket, int num_connections)
+{
+    if ((listen(server_socket, num_connections)) < 0)
+    {
+        perror("Listen failed");
+        printf("Error code: %d\n", errno);
+        exit(EXIT_FAILURE);
+    }
+}
+
+void check_accept(int server_socket, int *client_socket, struct sockaddr *client_address)
+{
+    if ((*client_socket = accept(server_socket, (struct sockaddr *)client_address, (socklen_t *)sizeof(client_address))) < 0)
+    {
+        perror("Accept failed");
+        printf("Error code: %d\n", errno);
+        exit(EXIT_FAILURE);
+    }
 }

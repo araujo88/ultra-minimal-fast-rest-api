@@ -8,13 +8,12 @@
 
 #define SQL_QUERY_SIZE 1024
 
-void create_table_user();
-void get_users(char *buffer);
-void get_user(unsigned int id, char *buffer);
-void create_user(user User, char *buffer);
-void update_user(unsigned int id, user User, char *buffer);
-void delete_user(unsigned int id, char *buffer);
-
+void create_table();
+void get_entries(char *buffer);
+void get_entry(unsigned int id, char *buffer);
+void create_entry(char struct_string[NUM_COLS][STR_LEN], char *buffer);
+void update_entry(unsigned int id, char struct_string[NUM_COLS][STR_LEN], char *buffer);
+void delete_entry(unsigned int id, char *buffer);
 void open_database();
 void close_database();
 void check_connection();
