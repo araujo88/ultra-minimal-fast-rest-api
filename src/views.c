@@ -34,7 +34,7 @@ void get_users_view(void *client_socket)
 
     printf("[%s] - ", current_date);
     printf("\033[0;32mHTTP/1.0 200 OK\033[0m\n");
-    sprintf(server_message, "HTTP/1.0 200 OK\nDate: %s\nContent-Type: text/html\nContent-Length: %ld\n\n%s", current_date, strlen(content), content);
+    sprintf(server_message, "HTTP/1.0 200 OK\nDate: %s\nContent-Type: application/json\nContent-Length: %ld\n\n%s", current_date, strlen(content), content);
     send(*(int *)client_socket, &server_message, sizeof(server_message), 0);
     memset(server_message, 0, sizeof(server_message));
 }
