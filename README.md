@@ -17,9 +17,9 @@ A minimal and fast RESTful API potentially useful for developing mock APIs with 
 
 ### Requirements
 
-`libsqlite3-dev`
-`make`
-`gcc`
+`libsqlite3-dev` <br>
+`make` <br>
+`gcc` <br>
 
 ### Running
 
