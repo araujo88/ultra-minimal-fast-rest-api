@@ -32,7 +32,7 @@ A minimal and fast RESTful API potentially useful for developing mock APIs. Writ
 You can define your model at the xml file named `models.xml`. A user model is provided as example for a database table:
 
 ```
-<model name="Users">
+<model name="users">
 <col name="name">TEXT</col>
 <col name="surname">TEXT</col>
 <col name="age">INT</col>
@@ -69,7 +69,7 @@ Contains the database model. On this example, the model consists of a simple "us
 
 ### routes.h
 
-Contains all the accepted routes and a respective accepted HTTP methods.
+Contains the method to automatically generate basic CRUD routes. Example:
 
 `GET /` - root with "Hello world" message <br>
 `GET /users` - lists all users in .json format <br>
