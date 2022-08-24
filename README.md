@@ -1,6 +1,6 @@
 # ultra-minimal-fast-rest-api
 
-Ultra minimal and fast RESTful API written in C using Unix websockets, POSIX threads for multi-threaded server and SQLite database integration.
+A minimal and fast RESTful API potentially useful for developing mock APIs. Written in C using Unix websockets, POSIX threads for multi-threaded server and integrated with SQLite.
 
 ## Running on Docker
 
