@@ -63,3 +63,6 @@ generate_models
 
 # Logs
 *.log
+
+# virtualenv
+env
