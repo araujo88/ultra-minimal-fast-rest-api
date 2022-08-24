@@ -3,6 +3,7 @@
 #include "../include/routes.h"
 #include "../include/database.h"
 #include "../include/settings.h"
+#include "../include/models.h"
 
 char url_get_root[URL_MAX_LEN];
 char url_get_entries[URL_MAX_LEN];
@@ -82,8 +83,6 @@ void *send_data(void *client_socket)
                 root_view(client_socket);
                 close(*(int *)client_socket);
                 free(client_socket);
-                memset(request, 0, sizeof(request));
-                memset(content, 0, sizeof(content));
                 pthread_exit(&self);
             }
             else if (strstr(request, url_get_entry) != NULL)
@@ -102,8 +101,6 @@ void *send_data(void *client_socket)
                 get_user_view(client_socket, atoi(id));
                 close(*(int *)client_socket);
                 free(client_socket);
-                memset(request, 0, sizeof(request));
-                memset(content, 0, sizeof(content));
                 pthread_exit(&self);
             }
             else if (strstr(request, url_post_entry) != NULL)
@@ -135,8 +132,6 @@ void *send_data(void *client_socket)
 
                 close(*(int *)client_socket);
                 free(client_socket);
-                memset(request, 0, sizeof(request));
-                memset(content, 0, sizeof(content));
                 pthread_exit(&self);
             }
             else if (strstr(request, url_put_entry) != NULL)
@@ -177,8 +172,6 @@ void *send_data(void *client_socket)
 
                 close(*(int *)client_socket);
                 free(client_socket);
-                memset(request, 0, sizeof(request));
-                memset(content, 0, sizeof(content));
                 pthread_exit(&self);
             }
             else if (strstr(request, url_delete_entry) != NULL)
@@ -197,8 +190,6 @@ void *send_data(void *client_socket)
                 delete_user_view(client_socket, atoi(id));
                 close(*(int *)client_socket);
                 free(client_socket);
-                memset(request, 0, sizeof(request));
-                memset(content, 0, sizeof(content));
                 pthread_exit(&self);
             }
             else if (strstr(request, url_get_entries) != NULL)
@@ -206,8 +197,6 @@ void *send_data(void *client_socket)
                 get_users_view(client_socket);
                 close(*(int *)client_socket);
                 free(client_socket);
-                memset(request, 0, sizeof(request));
-                memset(content, 0, sizeof(content));
                 pthread_exit(&self);
             }
         }
@@ -215,8 +204,6 @@ void *send_data(void *client_socket)
     error_not_found(client_socket);
     close(*(int *)client_socket);
     free(client_socket);
-    memset(request, 0, sizeof(request));
-    memset(content, 0, sizeof(content));
     pthread_exit(&self);
 }
 
@@ -230,8 +217,6 @@ void get_request(int client_socket, char *request, char *content)
     time(&t);
     current_date = ctime(&t);
     current_date[strcspn(current_date, "\n")] = 0;
-
-    memset(client_message, 0, sizeof(client_message));
 
     if ((recv(client_socket, &client_message, sizeof(client_message), 0)) < 0)
     {
@@ -253,7 +238,6 @@ void get_request(int client_socket, char *request, char *content)
 
     printf("[%s] - ", current_date);
     printf("%s\n", request);
-    memset(client_message, 0, sizeof(client_message));
 }
 
 bool check_client_ip(int *client_socket, struct sockaddr *client_address)

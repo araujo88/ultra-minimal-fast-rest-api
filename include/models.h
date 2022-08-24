@@ -7,7 +7,7 @@
 
 #define TABLE_NAME "users"
 
-static char *TABLE_COLS[NUM_COLS][2] = {
+static const char *TABLE_COLS[NUM_COLS][2] = {
 	{"name", "TEXT"},
 	{"surname", "TEXT"},
 	{"age", "INT"},

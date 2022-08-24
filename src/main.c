@@ -22,7 +22,7 @@ void handle_signal(int sig)
     printf("Closing socket ...\n");
     if (close(server_socket) == 0)
     {
-        puts("Socket closed!");
+        printf("Socket closed!\n");
         exit(EXIT_SUCCESS);
     }
     else

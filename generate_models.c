@@ -55,7 +55,7 @@ void process_file(FILE *input_file, FILE *output_file, char *buffer1)
                 buffer2 += strlen("<model name=");
                 remove_substring(buffer2, ">");
                 fprintf(output_file, "\n#define TABLE_NAME %s\n", buffer2);
-                fprintf(output_file, "static char *TABLE_COLS[NUM_COLS][2] = {\n");
+                fprintf(output_file, "static const char *TABLE_COLS[NUM_COLS][2] = {\n");
                 memset(buffer2, 0, strlen(buffer2));
             }
             else if (strstr(buffer1, "<col name=") != NULL)

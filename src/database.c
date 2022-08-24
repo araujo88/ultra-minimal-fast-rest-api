@@ -124,7 +124,15 @@ int callback(void *buffer, int argc, char *argv[], char *azColName[])
     sprintf(buffer + strlen(buffer), "{\n");
     for (int i = 0; i < argc; i++)
     {
-        if ((strcmp(azColName[i], "Id") == 0) || (strcmp(TABLE_COLS[1][i], "INTEGER") == 0))
+        if (strcmp(azColName[i], "Id") == 0)
+        {
+            sprintf(buffer + strlen(buffer), "\t\"%s\": %s,\n", azColName[i], argv[i] ? argv[i] : "NULL");
+        }
+        else if (strcmp(TABLE_COLS[i - 1][1], "INT") == 0)
+        {
+            sprintf(buffer + strlen(buffer), "\t\"%s\": %s,\n", azColName[i], argv[i] ? argv[i] : "NULL");
+        }
+        else if (strcmp(TABLE_COLS[i - 1][1], "REAL") == 0)
         {
             sprintf(buffer + strlen(buffer), "\t\"%s\": %s,\n", azColName[i], argv[i] ? argv[i] : "NULL");
         }
