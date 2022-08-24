@@ -37,7 +37,7 @@ void get_entries(char *buffer)
 
     rc = sqlite3_exec(db, sql, callback, buffer, &db_err_msg);
 
-    if (strcmp(buffer, "") == 0)
+    if (strcmp(buffer, "[\n") == 0)
     {
         sprintf(buffer, "{}");
     }

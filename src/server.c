@@ -28,10 +28,10 @@ void create_server(int server_socket, char *ip, int port, int max_connections)
 
     // --------------- create dummy database --------------- //
 
-    char user1[NUM_COLS][STR_LEN] = {"John", "Doe", "30", "1.75"};
-    create_entry(user1, NULL);
-    char user2[NUM_COLS][STR_LEN] = {"Billy", "Bob", "31", "1.60"};
-    create_entry(user2, NULL);
+    // char user1[NUM_COLS][STR_LEN] = {"John", "Doe", "30", "1.75"};
+    // create_entry(user1, NULL);
+    // char user2[NUM_COLS][STR_LEN] = {"Billy", "Bob", "31", "1.60"};
+    // create_entry(user2, NULL);
 
     // --------------- end creating dummy database --------------- //
 
