@@ -1,6 +1,6 @@
 # ultra-minimal-fast-rest-api
 
-A minimal and fast RESTful API potentially useful for developing mock APIs. Written in C using Unix websockets, POSIX threads for multi-threaded server and integrated with SQLite.
+A minimal and fast RESTful API potentially useful for developing mock APIs with basic CRUD (create/read/update/delete) functionality. Written in C using Unix websockets, POSIX threads for multi-threaded server and integrated with SQLite.
 
 ## Running on Docker
 
@@ -11,7 +11,7 @@ A minimal and fast RESTful API potentially useful for developing mock APIs. Writ
 
 ### Running
 
-`docker compose up --build`
+`./run_container`
 
 ## Running locally (Linux)
 
@@ -21,11 +21,7 @@ A minimal and fast RESTful API potentially useful for developing mock APIs. Writ
 
 ### Running
 
-`make clean` <br>
-`make generate_models` <br>
-`./generate_models` <br>
-`make` <br>
-`./server` <br>
+`./run_locally`
 
 ## Getting started
 
