@@ -14,7 +14,7 @@
 #include <signal.h>  // for interrupt signal handler
 #include <pthread.h> // POSIX threads
 
-#define BUFFER_SIZE 1024
+#define BUFFER_SIZE 4096
 
 void check_socket(int server_socket);                                                      // check socket creation
 void check_bind(int server_socket, struct sockaddr_in *server_address);                    // check binding

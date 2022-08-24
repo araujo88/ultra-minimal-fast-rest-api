@@ -15,6 +15,7 @@ void root_view(void *client_socket)
     printf("\033[0;32mHTTP/1.0 200 OK\033[0m\n");
     sprintf(server_message, "HTTP/1.0 200 OK\nDate: %s\nContent-Type: text/html\nContent-Length: %ld\n\n%s", current_date, strlen(content), content);
     send(*(int *)client_socket, &server_message, sizeof(server_message), 0);
+
     memset(server_message, 0, sizeof(server_message));
 }
 
@@ -35,7 +36,9 @@ void get_users_view(void *client_socket)
     printf("\033[0;32mHTTP/1.0 200 OK\033[0m\n");
     sprintf(server_message, "HTTP/1.0 200 OK\nDate: %s\nContent-Type: application/json\nContent-Length: %ld\n\n%s", current_date, strlen(content), content);
     send(*(int *)client_socket, &server_message, sizeof(server_message), 0);
+
     memset(server_message, 0, sizeof(server_message));
+    memset(content, 0, sizeof(content));
 }
 
 void get_user_view(void *client_socket, unsigned int id)
@@ -55,7 +58,9 @@ void get_user_view(void *client_socket, unsigned int id)
     printf("\033[0;32mHTTP/1.1 200 OK\033[0m\n");
     sprintf(server_message, "HTTP/1.1 200 OK\nDate: %s\nContent-Type: application/json\nContent-Length: %ld\n\n%s", current_date, strlen(content), content);
     send(*(int *)client_socket, &server_message, sizeof(server_message), 0);
+
     memset(server_message, 0, sizeof(server_message));
+    memset(content, 0, sizeof(content));
 }
 
 void delete_user_view(void *client_socket, unsigned int id)
@@ -75,7 +80,9 @@ void delete_user_view(void *client_socket, unsigned int id)
     printf("\033[0;32mHTTP/1.1 200 OK\033[0m\n");
     sprintf(server_message, "HTTP/1.1 200 OK\nDate: %s\nContent-Type: application/json\nContent-Length: %ld\n\n%s", current_date, strlen(content), content);
     send(*(int *)client_socket, &server_message, sizeof(server_message), 0);
+
     memset(server_message, 0, sizeof(server_message));
+    memset(content, 0, sizeof(content));
 }
 
 void update_user_view(void *client_socket, unsigned int id, char struct_string[NUM_COLS][STR_LEN])
@@ -95,7 +102,10 @@ void update_user_view(void *client_socket, unsigned int id, char struct_string[N
     printf("\033[0;32mHTTP/1.1 200 OK\033[0m\n");
     sprintf(server_message, "HTTP/1.1 200 OK\nDate: %s\nContent-Type: application/json\nContent-Length: %ld\n\n%s", current_date, strlen(content), content);
     send(*(int *)client_socket, &server_message, sizeof(server_message), 0);
+
     memset(server_message, 0, sizeof(server_message));
+    memset(content, 0, sizeof(content));
+    memset(struct_string, 0, NUM_COLS * STR_LEN);
 }
 
 void create_user_view(void *client_socket, char struct_string[NUM_COLS][STR_LEN])
@@ -115,7 +125,10 @@ void create_user_view(void *client_socket, char struct_string[NUM_COLS][STR_LEN]
     printf("\033[0;32mHTTP/1.1 201 Created\033[0m\n");
     sprintf(server_message, "HTTP/1.1 201 Created\nDate: %s\nContent-Type: application/json\nContent-Length: %ld\n\n%s", current_date, strlen(content), content);
     send(*(int *)client_socket, &server_message, sizeof(server_message), 0);
+
     memset(server_message, 0, sizeof(server_message));
+    memset(content, 0, sizeof(content));
+    memset(struct_string, 0, NUM_COLS * STR_LEN);
 }
 
 void error_not_found(void *client_socket)

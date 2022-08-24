@@ -71,6 +71,8 @@ void *send_data(void *client_socket)
                 root_view(client_socket);
                 close(*(int *)client_socket);
                 free(client_socket);
+                memset(request, 0, sizeof(request));
+                memset(content, 0, sizeof(content));
                 pthread_exit(&self);
             }
             else if (strstr(request, "GET /users/") != NULL)
@@ -89,6 +91,8 @@ void *send_data(void *client_socket)
                 get_user_view(client_socket, atoi(id));
                 close(*(int *)client_socket);
                 free(client_socket);
+                memset(request, 0, sizeof(request));
+                memset(content, 0, sizeof(content));
                 pthread_exit(&self);
             }
             else if (strstr(request, "POST /users") != NULL)
@@ -120,6 +124,8 @@ void *send_data(void *client_socket)
 
                 close(*(int *)client_socket);
                 free(client_socket);
+                memset(request, 0, sizeof(request));
+                memset(content, 0, sizeof(content));
                 pthread_exit(&self);
             }
             else if (strstr(request, "PUT /users/") != NULL)
@@ -160,6 +166,8 @@ void *send_data(void *client_socket)
 
                 close(*(int *)client_socket);
                 free(client_socket);
+                memset(request, 0, sizeof(request));
+                memset(content, 0, sizeof(content));
                 pthread_exit(&self);
             }
             else if (strstr(request, "DELETE /users/") != NULL)
@@ -178,6 +186,8 @@ void *send_data(void *client_socket)
                 delete_user_view(client_socket, atoi(id));
                 close(*(int *)client_socket);
                 free(client_socket);
+                memset(request, 0, sizeof(request));
+                memset(content, 0, sizeof(content));
                 pthread_exit(&self);
             }
             else if (strstr(request, "GET /users ") != NULL)
@@ -185,11 +195,17 @@ void *send_data(void *client_socket)
                 get_users_view(client_socket);
                 close(*(int *)client_socket);
                 free(client_socket);
+                memset(request, 0, sizeof(request));
+                memset(content, 0, sizeof(content));
                 pthread_exit(&self);
             }
         }
     }
     error_not_found(client_socket);
+    close(*(int *)client_socket);
+    free(client_socket);
+    memset(request, 0, sizeof(request));
+    memset(content, 0, sizeof(content));
     pthread_exit(&self);
 }
 
