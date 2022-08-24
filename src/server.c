@@ -4,6 +4,15 @@
 #include "../include/database.h"
 #include "../include/settings.h"
 
+char url_get_root[URL_MAX_LEN];
+char url_get_entries[URL_MAX_LEN];
+char url_get_entry[URL_MAX_LEN];
+char url_post_entry[URL_MAX_LEN];
+char url_put_entry[URL_MAX_LEN];
+char url_delete_entry[URL_MAX_LEN];
+
+char *routes[NUM_ROUTES] = {url_get_root, url_get_entries, url_get_entry, url_put_entry, url_delete_entry, url_post_entry};
+
 void create_server(int server_socket, char *ip, int port, int max_connections)
 {
     printf("Creating socket ...\n");
@@ -25,6 +34,8 @@ void create_server(int server_socket, char *ip, int port, int max_connections)
     check_version();
 
     create_table();
+
+    generate_routes();
 
     // --------------- create dummy database --------------- //
 
@@ -66,7 +77,7 @@ void *send_data(void *client_socket)
     {
         if (strstr(request, routes[i]) != NULL)
         {
-            if (strstr(request, "GET / ") != NULL)
+            if (strstr(request, url_get_root) != NULL)
             {
                 root_view(client_socket);
                 close(*(int *)client_socket);
@@ -75,14 +86,14 @@ void *send_data(void *client_socket)
                 memset(content, 0, sizeof(content));
                 pthread_exit(&self);
             }
-            else if (strstr(request, "GET /users/") != NULL)
+            else if (strstr(request, url_get_entry) != NULL)
             {
                 int i = 0;
                 char id[256];
                 char *tmp;
-                strcpy(request, strstr(request, "GET /users/"));
+                strcpy(request, strstr(request, url_get_entry));
                 tmp = request;
-                tmp = tmp + strlen("GET /users/");
+                tmp = tmp + strlen(url_get_entry);
                 while (tmp[i] != 'H')
                 {
                     id[i] = tmp[i];
@@ -95,14 +106,14 @@ void *send_data(void *client_socket)
                 memset(content, 0, sizeof(content));
                 pthread_exit(&self);
             }
-            else if (strstr(request, "POST /users") != NULL)
+            else if (strstr(request, url_post_entry) != NULL)
             {
                 int i;
                 char field[512];
                 char model_string[NUM_COLS][STR_LEN];
 
                 sprintf(field, "%s=", TABLE_COLS[0][0]);
-                strcpy(request, strstr(request, "POST /users"));
+                strcpy(request, strstr(request, url_post_entry));
                 strcpy(content, strstr(content, field));
 
                 char *token = strtok(content, "=&");
@@ -128,7 +139,7 @@ void *send_data(void *client_socket)
                 memset(content, 0, sizeof(content));
                 pthread_exit(&self);
             }
-            else if (strstr(request, "PUT /users/") != NULL)
+            else if (strstr(request, url_put_entry) != NULL)
             {
                 int i = 0;
                 char id[256];
@@ -137,9 +148,9 @@ void *send_data(void *client_socket)
                 char model_string[NUM_COLS][STR_LEN];
 
                 sprintf(field, "%s=", TABLE_COLS[0][0]);
-                strcpy(request, strstr(request, "PUT /users/"));
+                strcpy(request, strstr(request, url_put_entry));
                 tmp = request;
-                tmp = tmp + strlen("PUT /users/");
+                tmp = tmp + strlen(url_put_entry);
                 while (tmp[i] != 'H')
                 {
                     id[i] = tmp[i];
@@ -170,14 +181,14 @@ void *send_data(void *client_socket)
                 memset(content, 0, sizeof(content));
                 pthread_exit(&self);
             }
-            else if (strstr(request, "DELETE /users/") != NULL)
+            else if (strstr(request, url_delete_entry) != NULL)
             {
                 int i = 0;
                 char id[256];
                 char *tmp;
-                strcpy(request, strstr(request, "DELETE /users/"));
+                strcpy(request, strstr(request, url_delete_entry));
                 tmp = request;
-                tmp = tmp + strlen("DELETE /users/");
+                tmp = tmp + strlen(url_delete_entry);
                 while (tmp[i] != 'H')
                 {
                     id[i] = tmp[i];
@@ -190,7 +201,7 @@ void *send_data(void *client_socket)
                 memset(content, 0, sizeof(content));
                 pthread_exit(&self);
             }
-            else if (strstr(request, "GET /users ") != NULL)
+            else if (strstr(request, url_get_entries) != NULL)
             {
                 get_users_view(client_socket);
                 close(*(int *)client_socket);

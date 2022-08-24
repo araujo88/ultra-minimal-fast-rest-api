@@ -1,4 +1,4 @@
-<model name="Users">
+<model name="users">
 <col name="name">TEXT</col>
 <col name="surname">TEXT</col>
 <col name="age">INT</col>

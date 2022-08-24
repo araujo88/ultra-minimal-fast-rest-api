@@ -5,7 +5,7 @@
 
 #define STR_LEN 256
 
-#define TABLE_NAME "Users"
+#define TABLE_NAME "users"
 
 static char *TABLE_COLS[NUM_COLS][2] = {
 	{"name", "TEXT"},
