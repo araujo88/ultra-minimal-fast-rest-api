@@ -28,9 +28,9 @@ void create_server(int server_socket, char *ip, int port, int max_connections)
 
     // --------------- create dummy database --------------- //
 
-    char user1[NUM_COLS][STR_LEN] = {"John", "Doe", "30"};
+    char user1[NUM_COLS][STR_LEN] = {"John", "Doe", "30", "1.75"};
     create_entry(user1, NULL);
-    char user2[NUM_COLS][STR_LEN] = {"Billy", "Bob", "31"};
+    char user2[NUM_COLS][STR_LEN] = {"Billy", "Bob", "31", "1.60"};
     create_entry(user2, NULL);
 
     // --------------- end creating dummy database --------------- //
@@ -93,7 +93,6 @@ void *send_data(void *client_socket)
             }
             else if (strstr(request, "POST /users") != NULL)
             {
-                model Model;
                 int i;
                 char field[512];
                 char model_string[NUM_COLS][STR_LEN];
@@ -117,8 +116,7 @@ void *send_data(void *client_socket)
                     token = strtok(NULL, "=&");
                 }
 
-                string_array_to_struct(&Model, model_string);
-                create_user_view(client_socket, Model);
+                create_user_view(client_socket, model_string);
 
                 close(*(int *)client_socket);
                 free(client_socket);
@@ -126,7 +124,6 @@ void *send_data(void *client_socket)
             }
             else if (strstr(request, "PUT /users/") != NULL)
             {
-                model Model;
                 int i = 0;
                 char id[256];
                 char *tmp;
@@ -159,8 +156,7 @@ void *send_data(void *client_socket)
                     token = strtok(NULL, "=&");
                 }
 
-                string_array_to_struct(&Model, model_string);
-                update_user_view(client_socket, atoi(id), Model);
+                update_user_view(client_socket, atoi(id), model_string);
 
                 close(*(int *)client_socket);
                 free(client_socket);

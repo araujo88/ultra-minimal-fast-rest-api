@@ -23,5 +23,8 @@ $(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
 $(OBJ_DIR):
 	mkdir $@
 
+generate_models: generate_models.c
+	$(CC) generate_models.c -o generate_models
+
 clean:
-	rm -rf $(BIN_FILE) $(OBJ_DIR) $(TBN_DIR) *.db
+	rm -rf $(BIN_FILE) $(OBJ_DIR) $(TBN_DIR) *.db generate_models

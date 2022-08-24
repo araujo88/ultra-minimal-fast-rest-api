@@ -22,20 +22,33 @@ Ultra minimal and fast RESTful API written in C using Unix websockets, POSIX thr
 ### Running
 
 `make clean` <br>
+`make generate_models` <br>
+`./generate_models` <br>
 `make` <br>
 `./server` <br>
 
-The server should be available at `http://localhost:9002`.
+## Getting started
 
-## Project structure overview
+You can define your model at the xml file named `models.xml`. A user model is provided as example for a database table:
 
-### Getting started
+```
+<model name="Users">
+<col name="name">TEXT</col>
+<col name="surname">TEXT</col>
+<col name="age">INT</col>
+<col name="height">REAL</col>
+</model>
+```
 
 In the `main.c` file, start the server with `create_server(server_socket, "<ip-adress>", <port>, <max_number_of_connections>)`. Default IP address is 0.0.0.0, default port is 9002 and default maximum number of simultaneous connections is 10.
 
 ### Tests
 
 A simple Python file located in `tests/tests.py` can be used to test each endpoint.
+
+The server should be available at `http://localhost:9002`.
+
+## Project structure overview
 
 ### settings.h
 

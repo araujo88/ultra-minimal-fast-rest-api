@@ -57,8 +57,9 @@ dkms.conf
 # Database
 *.db
 
-# Binary
+# Binaries
 server
+generate_models
 
 # Logs
-server.log
+*.log

@@ -6,4 +6,4 @@ RUN useradd -rm -d /home/ubuntu -s /bin/bash -g root -G sudo -u 1001 ubuntu
 USER ubuntu
 WORKDIR /home/ubuntu
 COPY . /home/ubuntu
-CMD make clean && make && ./server
+CMD make clean && make generate_models && ./generate_models && make && ./server
