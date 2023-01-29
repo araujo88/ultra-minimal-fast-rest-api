@@ -1,5 +1,5 @@
 CC=gcc
-CC_FLAGS=-g -Wall
+CC_FLAGS=-g -Wall -Wextra -Wpedantic
 CC_LIBS=-lpthread -lsqlite3
 
 SRC_DIR=src
