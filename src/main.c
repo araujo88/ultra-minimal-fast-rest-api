@@ -26,7 +26,6 @@ void handle_signal(int sig)
     if (close(server_socket) == 0)
     {
         printf("Socket closed!\n");
-        exit(EXIT_SUCCESS);
     }
     else
     {
@@ -36,4 +35,6 @@ void handle_signal(int sig)
     }
     printf("Thread pool cleanup ...\n");
     thread_pool_cleanup(pool);
+    printf("All threads terminated.\n");
+    exit(EXIT_SUCCESS);
 }
