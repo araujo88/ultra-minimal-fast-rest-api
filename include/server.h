@@ -13,8 +13,9 @@
 #include <string.h>
 #include <signal.h>  // for interrupt signal handler
 #include <pthread.h> // POSIX threads
+#include "threadpool.h"
 
-#define BUFFER_SIZE 4096
+#define BUFFER_SIZE 8192
 
 void check_socket(int server_socket);                                                      // check socket creation
 void check_bind(int server_socket, struct sockaddr_in *server_address);                    // check binding
@@ -22,7 +23,7 @@ void check_listen(int server_socket, int number_connections);                   
 void check_accept(int server_socket, int *client_socket, struct sockaddr *client_address); // check accepting connection
 void *send_data(void *client_socket);                                                      // sends data
 void get_request(int client_socket, char *request, char *content);                         // displays client request
-void create_server(int server_socket, char *ip, int port, int max_connections);
+void create_server(int server_socket, char *ip, int port, int max_connections, thread_pool_t *pool);
 bool check_client_ip(int *client_socket, struct sockaddr *client_address);
 
 #endif

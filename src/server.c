@@ -14,7 +14,7 @@ char url_delete_entry[URL_MAX_LEN];
 
 char *routes[NUM_ROUTES] = {url_get_root, url_get_entries, url_get_entry, url_put_entry, url_delete_entry, url_post_entry};
 
-void create_server(int server_socket, char *ip, int port, int max_connections)
+void create_server(int server_socket, char *ip, int port, int max_connections, thread_pool_t *pool)
 {
     printf("Creating socket ...\n");
     server_socket = socket(AF_INET, SOCK_STREAM, 0);
@@ -59,8 +59,7 @@ void create_server(int server_socket, char *ip, int port, int max_connections)
 
         if (check_client_ip(client_socket, (struct sockaddr *)client_address))
         {
-            pthread_t t;
-            pthread_create(&t, NULL, send_data, (void *)client_socket);
+            thread_pool_add_task(pool, (void *)send_data, (void *)client_socket);
         }
     }
 }
@@ -68,9 +67,8 @@ void create_server(int server_socket, char *ip, int port, int max_connections)
 void *send_data(void *client_socket)
 {
     int i;
-    char request[BUFFER_SIZE];
-    char content[BUFFER_SIZE];
-    pthread_t self = pthread_self();
+    char request[BUFFER_SIZE] = {0};
+    char content[BUFFER_SIZE] = {0};
 
     get_request(*(int *)client_socket, request, content);
 
@@ -81,14 +79,11 @@ void *send_data(void *client_socket)
             if (strstr(request, url_get_root) != NULL)
             {
                 root_view(client_socket);
-                close(*(int *)client_socket);
-                free(client_socket);
-                pthread_exit(&self);
             }
             else if (strstr(request, url_get_entry) != NULL)
             {
                 int i = 0;
-                char id[256];
+                char id[256] = {0};
                 char *tmp;
                 strcpy(request, strstr(request, url_get_entry));
                 tmp = request;
@@ -98,10 +93,8 @@ void *send_data(void *client_socket)
                     id[i] = tmp[i];
                     i++;
                 }
+                id[i] = '\0';
                 get_user_view(client_socket, atoi(id));
-                close(*(int *)client_socket);
-                free(client_socket);
-                pthread_exit(&self);
             }
             else if (strstr(request, url_post_entry) != NULL)
             {
@@ -110,8 +103,25 @@ void *send_data(void *client_socket)
                 char model_string[NUM_COLS][STR_LEN];
 
                 sprintf(field, "%s=", TABLE_COLS[0][0]);
-                strcpy(request, strstr(request, url_post_entry));
-                strcpy(content, strstr(content, field));
+                const char *temp = strstr(request, url_post_entry);
+                if (temp)
+                {
+                    memmove(request, temp, strlen(temp) + 1);
+                }
+                else
+                {
+                    // Handle the error, such as logging it or returning an error code
+                }
+
+                temp = strstr(content, field);
+                if (temp)
+                {
+                    memmove(content, temp, strlen(temp) + 1);
+                }
+                else
+                {
+                    // Handle the error
+                }
 
                 char *token = strtok(content, "=&");
 
@@ -127,19 +137,14 @@ void *send_data(void *client_socket)
                     }
                     token = strtok(NULL, "=&");
                 }
-
                 create_user_view(client_socket, model_string);
-
-                close(*(int *)client_socket);
-                free(client_socket);
-                pthread_exit(&self);
             }
             else if (strstr(request, url_put_entry) != NULL)
             {
                 int i = 0;
-                char id[256];
+                char id[256] = {0};
                 char *tmp;
-                char field[512];
+                char field[512] = {0};
                 char model_string[NUM_COLS][STR_LEN];
 
                 sprintf(field, "%s=", TABLE_COLS[0][0]);
@@ -151,6 +156,7 @@ void *send_data(void *client_socket)
                     id[i] = tmp[i];
                     i++;
                 }
+                id[i] = '\0';
                 strcpy(content, strstr(content, field));
 
                 char *token = strtok(content, "=&");
@@ -167,17 +173,12 @@ void *send_data(void *client_socket)
                     }
                     token = strtok(NULL, "=&");
                 }
-
                 update_user_view(client_socket, atoi(id), model_string);
-
-                close(*(int *)client_socket);
-                free(client_socket);
-                pthread_exit(&self);
             }
             else if (strstr(request, url_delete_entry) != NULL)
             {
                 int i = 0;
-                char id[256];
+                char id[256] = {0};
                 char *tmp;
                 strcpy(request, strstr(request, url_delete_entry));
                 tmp = request;
@@ -187,24 +188,18 @@ void *send_data(void *client_socket)
                     id[i] = tmp[i];
                     i++;
                 }
+                id[i] = '\0';
                 delete_user_view(client_socket, atoi(id));
-                close(*(int *)client_socket);
-                free(client_socket);
-                pthread_exit(&self);
             }
             else if (strstr(request, url_get_entries) != NULL)
             {
                 get_users_view(client_socket);
-                close(*(int *)client_socket);
-                free(client_socket);
-                pthread_exit(&self);
             }
         }
     }
     error_not_found(client_socket);
     close(*(int *)client_socket);
     free(client_socket);
-    pthread_exit(&self);
 }
 
 void get_request(int client_socket, char *request, char *content)
