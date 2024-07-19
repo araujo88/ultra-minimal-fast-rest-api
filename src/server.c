@@ -195,9 +195,12 @@ void *send_data(void *client_socket)
             {
                 get_users_view(client_socket);
             }
+            else
+            {
+                error_not_found(client_socket);
+            }
         }
     }
-    error_not_found(client_socket);
     close(*(int *)client_socket);
     free(client_socket);
 }
