@@ -230,6 +230,12 @@ class TestConfig:
         assert r.returncode != 0
         assert "Invalid --port" in r.stderr
 
+    def test_version_flag(self):
+        r = subprocess.run([SERVER_BIN, "--version"], cwd=REPO_ROOT,
+                           capture_output=True, text=True, timeout=10)
+        assert r.returncode == 0
+        assert r.stdout.strip()  # prints a version string ("dev" for local builds)
+
 
 # --------------------------------------------------------------------------- #
 # Optional HTTP Basic auth (BASIC_AUTH env)

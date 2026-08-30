@@ -1,5 +1,10 @@
 CC=gcc
-CC_FLAGS=-g -Wall -Wextra -Wpedantic
+
+# Version baked into the binary (printed by `./server --version`). Release CI
+# passes the tag, e.g. `make VERSION=v1.2.3`; local builds default to "dev".
+VERSION ?= dev
+
+CC_FLAGS=-g -Wall -Wextra -Wpedantic -DUMFRA_VERSION='"$(VERSION)"'
 CC_LIBS=-lpthread -lsqlite3
 
 # Sanitizer flags for the `asan` target (AddressSanitizer + UBSan).

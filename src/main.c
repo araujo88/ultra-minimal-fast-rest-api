@@ -3,6 +3,11 @@
 #include "../include/threadpool.h"
 #include <getopt.h>
 
+// Baked in at build time (`make VERSION=v1.2.3`); "dev" for local builds.
+#ifndef UMFRA_VERSION
+#define UMFRA_VERSION "dev"
+#endif
+
 int server_socket;
 thread_pool_t *pool;
 
@@ -54,6 +59,7 @@ static void usage(const char *prog)
             "  -p, --port PORT       listen port 1-65535 (default 9002)\n"
             "  -t, --threads N       worker threads 1-1024 (default 8)\n"
             "  -b, --backlog N       listen backlog 1-65535 (default 10)\n"
+            "  -v, --version         print version and exit\n"
             "  -h, --help            show this help and exit\n"
             "\n"
             "Each option also has an environment default (a CLI flag overrides it):\n"
@@ -79,13 +85,14 @@ int main(int argc, char **argv)
         {"port", required_argument, 0, 'p'},
         {"threads", required_argument, 0, 't'},
         {"backlog", required_argument, 0, 'b'},
+        {"version", no_argument, 0, 'v'},
         {"help", no_argument, 0, 'h'},
         {0, 0, 0, 0}};
     int c;
     // Standard glibc getopt_long over a fixed optstring and our own option
     // table; the flagged CWE-120 note is about "older implementations".
     // Flawfinder: ignore getopt_long
-    while ((c = getopt_long(argc, argv, "H:p:t:b:h", opts, NULL)) != -1)
+    while ((c = getopt_long(argc, argv, "H:p:t:b:vh", opts, NULL)) != -1)
     {
         switch (c)
         {
@@ -113,6 +120,9 @@ int main(int argc, char **argv)
                 return EXIT_FAILURE;
             }
             break;
+        case 'v':
+            printf("%s\n", UMFRA_VERSION);
+            return EXIT_SUCCESS;
         case 'h':
             usage(argv[0]);
             return EXIT_SUCCESS;

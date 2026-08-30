@@ -118,6 +118,7 @@ default; both override the built-in default):
 ./server --host 127.0.0.1 --port 8080 --threads 16
 PORT=8080 THREADS=16 ./server        # equivalent via env
 ./server --help                      # full usage
+./server --version                   # print version
 ```
 
 - **`ALLOWED_HOSTS`** (environment variable) — comma-separated IPv4 allowlist,
@@ -213,6 +214,19 @@ cd tests && pip install -r requirements.txt && pytest -v
 
 CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs, in stages,
 lint → static analysis → build → tests + valgrind.
+
+## Releases
+
+Prebuilt Linux binaries (amd64, arm64) are attached to
+[GitHub Releases](https://github.com/leo-aa88/ultra-minimal-fast-rest-api/releases),
+each with a `SHA256SUMS.txt`. The binary dynamically links `libsqlite3`, so
+install it on the target (`apt-get install -y libsqlite3-0`). The version is
+baked in at build time (`make VERSION=v1.2.3`) and printed by `./server
+--version`.
+
+A release is cut by the [release workflow](.github/workflows/release.yml) —
+either push a `vX.Y.Z` tag, or run it manually with a `patch`/`minor`/`major`
+bump. It re-runs the build + test gate before publishing.
 
 ## Contributing
 
