@@ -169,6 +169,18 @@ class TestAllowlist:
         server_manager(env={"ALLOWED_HOSTS": "10.1.2.3, 127.0.0.1"})
         assert requests.get(self.BASE, timeout=TIMEOUT).status_code == 200
 
+    def test_garbage_only_falls_back_to_default(self, server_manager):
+        # No syntactically valid IPv4 -> fall back to the restrictive default
+        # (which includes 127.0.0.1) rather than denying everyone.
+        server_manager(env={"ALLOWED_HOSTS": "not-an-ip;drop table"})
+        assert requests.get(self.BASE, timeout=TIMEOUT).status_code == 200
+
+    def test_invalid_entries_are_ignored_valid_kept(self, server_manager):
+        # Garbage tokens are dropped; the valid one still governs. Localhost is
+        # not in the list, so it is forbidden.
+        server_manager(env={"ALLOWED_HOSTS": "not-an-ip, 999.999.1.1, 10.1.2.3"})
+        assert requests.get(self.BASE, timeout=TIMEOUT).status_code == 403
+
 
 # --------------------------------------------------------------------------- #
 # SQL injection resistance
