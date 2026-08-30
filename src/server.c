@@ -228,7 +228,8 @@ static void init_allowlist(void)
     // its length and accept only syntactically valid IPv4 literals (or "*"),
     // discarding anything else. It is also a legitimate operator-controlled
     // configuration channel; only someone who already controls the process
-    // environment can set it. Flawfinder: ignore getenv
+    // environment can set it.
+    // Flawfinder: ignore getenv
     const char *env = getenv("ALLOWED_HOSTS");
     if (!env || !*env)
     {

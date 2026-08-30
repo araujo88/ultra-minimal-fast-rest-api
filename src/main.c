@@ -36,6 +36,9 @@ static int parse_int(const char *s, int lo, int hi, int *out)
 // value (and warning) if it is set but malformed.
 static void env_int(const char *name, int lo, int hi, int *value)
 {
+    // Validated by parse_int below; only someone controlling the process
+    // environment can set it.
+    // Flawfinder: ignore getenv
     const char *s = getenv(name);
     if (!s || !*s)
         return;
@@ -61,6 +64,8 @@ static void usage(const char *prog)
 int main(int argc, char **argv)
 {
     // Defaults, then environment overrides, then CLI flags (highest priority).
+    // BIND_ADDRESS is operator-controlled config, validated by inet_pton later.
+    // Flawfinder: ignore getenv
     const char *host = getenv("BIND_ADDRESS");
     if (!host || !*host)
         host = "0.0.0.0";
@@ -77,6 +82,9 @@ int main(int argc, char **argv)
         {"help", no_argument, 0, 'h'},
         {0, 0, 0, 0}};
     int c;
+    // Standard glibc getopt_long over a fixed optstring and our own option
+    // table; the flagged CWE-120 note is about "older implementations".
+    // Flawfinder: ignore getopt_long
     while ((c = getopt_long(argc, argv, "H:p:t:b:h", opts, NULL)) != -1)
     {
         switch (c)
