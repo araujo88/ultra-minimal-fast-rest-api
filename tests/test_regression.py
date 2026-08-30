@@ -314,6 +314,31 @@ class TestConcurrency:
         assert all(c == 201 for c in codes), f"non-201 responses: {set(codes)}"
         assert len(get_list(server)) == N  # no dropped/overwritten requests
 
+    def test_concurrent_mixed_writes_report_correct_status(self, server):
+        # Regression for the sqlite3_changes() race: writes to an existing id and
+        # to a missing id run concurrently over the shared connection. Each must
+        # report its own outcome (200 vs 404), never the other writer's change
+        # count. Deterministic once the writers are serialized.
+        requests.post(f"{server}users",
+                      data={"name": "A", "surname": "B", "age": 1, "height": 1.0},
+                      timeout=TIMEOUT)
+        N = 1000
+        body = {"name": "C", "surname": "D", "age": 2, "height": 1.2}
+
+        def one(i):
+            if i % 2 == 0:
+                r = requests.put(f"{server}users/1", data=body, timeout=TIMEOUT)
+                return ("exist", r.status_code)
+            r = requests.put(f"{server}users/999999", data=body, timeout=TIMEOUT)
+            return ("missing", r.status_code)
+
+        with ThreadPoolExecutor(max_workers=32) as pool:
+            results = list(pool.map(one, range(N)))
+
+        bad = [r for r in results
+               if (r[0] == "exist" and r[1] != 200) or (r[0] == "missing" and r[1] != 404)]
+        assert not bad, f"incorrect statuses under concurrency: {bad[:10]}"
+
     def test_one_slow_client_does_not_block_others(self, server):
         # With spare workers available, a single stalled client must not delay
         # a normal request served by another worker.

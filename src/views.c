@@ -105,7 +105,9 @@ void get_user_view(void *client_socket, unsigned int id)
     }
     if (rc != DB_OK)
     {
-        respond_json(client_socket, "500 Internal Server Error", "{\"msg\": \"response too large\"}");
+        // DB_ERROR here is a prepare/step failure (a single row cannot overflow
+        // the buffer), so report a neutral error rather than "too large".
+        respond_json(client_socket, "500 Internal Server Error", "{\"msg\": \"error\"}");
         return;
     }
 

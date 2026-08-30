@@ -2,8 +2,18 @@
 #include <string.h>
 #include <stdlib.h>
 #include <time.h>
+#include <pthread.h>
 
 sqlite3 *db;
+
+// Serializes writes over the single shared connection. sqlite3_changes()
+// reports the row count of the most recently completed INSERT/UPDATE/DELETE on
+// the connection, so the step()+sqlite3_changes() pair in update/delete is only
+// meaningful if no other writer's statement can complete in between. All write
+// paths (create/update/delete) take this lock so that window is exclusive.
+// Reads (SELECT) do not affect the change counter and stay lock-free; the
+// connection itself is used in SQLite's default serialized threading mode.
+static pthread_mutex_t db_write_lock = PTHREAD_MUTEX_INITIALIZER;
 
 // ---------------------------------------------------------------------------
 // Bounded string builder + JSON serialization
@@ -263,7 +273,7 @@ int get_entry(unsigned int id, char *buffer, size_t cap)
 // Write paths (fully parameterized: no user data reaches SQL text)
 // ---------------------------------------------------------------------------
 
-int create_entry(char struct_string[NUM_COLS][STR_LEN], char *buffer, size_t cap)
+static int create_entry_impl(char struct_string[NUM_COLS][STR_LEN], char *buffer, size_t cap)
 {
     char sql[SQL_QUERY_SIZE];
     sqlite3_stmt *stmt = NULL;
@@ -303,7 +313,7 @@ int create_entry(char struct_string[NUM_COLS][STR_LEN], char *buffer, size_t cap
     return (rc == SQLITE_OK) ? DB_OK : DB_ERROR;
 }
 
-int update_entry(unsigned int id, char struct_string[NUM_COLS][STR_LEN], char *buffer, size_t cap)
+static int update_entry_impl(unsigned int id, char struct_string[NUM_COLS][STR_LEN], char *buffer, size_t cap)
 {
     char sql[SQL_QUERY_SIZE];
     sqlite3_stmt *stmt = NULL;
@@ -347,7 +357,7 @@ int update_entry(unsigned int id, char struct_string[NUM_COLS][STR_LEN], char *b
     return DB_OK;
 }
 
-int delete_entry(unsigned int id, char *buffer, size_t cap)
+static int delete_entry_impl(unsigned int id, char *buffer, size_t cap)
 {
     sqlite3_stmt *stmt = NULL;
     int changes = 0;
@@ -374,6 +384,33 @@ int delete_entry(unsigned int id, char *buffer, size_t cap)
         return DB_NOT_FOUND; // no row with that Id
     check_sql(SQLITE_OK, NULL, buffer, cap);
     return DB_OK;
+}
+
+// Public write entry points: serialize the step()+sqlite3_changes() sequence
+// (and the INSERT step) across all writers on the shared connection.
+
+int create_entry(char struct_string[NUM_COLS][STR_LEN], char *buffer, size_t cap)
+{
+    pthread_mutex_lock(&db_write_lock);
+    int r = create_entry_impl(struct_string, buffer, cap);
+    pthread_mutex_unlock(&db_write_lock);
+    return r;
+}
+
+int update_entry(unsigned int id, char struct_string[NUM_COLS][STR_LEN], char *buffer, size_t cap)
+{
+    pthread_mutex_lock(&db_write_lock);
+    int r = update_entry_impl(id, struct_string, buffer, cap);
+    pthread_mutex_unlock(&db_write_lock);
+    return r;
+}
+
+int delete_entry(unsigned int id, char *buffer, size_t cap)
+{
+    pthread_mutex_lock(&db_write_lock);
+    int r = delete_entry_impl(id, buffer, cap);
+    pthread_mutex_unlock(&db_write_lock);
+    return r;
 }
 
 // ---------------------------------------------------------------------------
