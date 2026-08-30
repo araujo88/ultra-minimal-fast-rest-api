@@ -2,7 +2,7 @@
 # Lower bounds are set to patched releases to clear known CVEs; pip resolves the
 # newest compatible versions at or above these floors. Transitive packages that
 # had advisories (urllib3, certifi, idna) are floored explicitly below.
-pytest>=9.0.3
+pytest>=9.1.1
 requests>=2.33.0
 faker>=40.37.0
 
