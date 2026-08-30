@@ -2,7 +2,7 @@
 .github
 obj/
 server
-generate_models
+http_test
 *.o
 *.db
 __pycache__/
