@@ -26,9 +26,6 @@ $(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
 $(OBJ_DIR):
 	mkdir $@
 
-generate_models: generate_models.c
-	$(CC) $(CC_FLAGS) generate_models.c -o generate_models
-
 # Instrumented build for catching memory/UB errors during testing.
 asan: CC_FLAGS += $(SAN_FLAGS)
 asan: clean all
@@ -44,4 +41,4 @@ http-test: $(SRC_DIR)/http.c tests/http_smoke.c
 	./http_test
 
 clean:
-	rm -rf $(BIN_FILE) $(OBJ_DIR) $(TBN_DIR) *.db generate_models http_test
+	rm -rf $(BIN_FILE) $(OBJ_DIR) $(TBN_DIR) *.db http_test

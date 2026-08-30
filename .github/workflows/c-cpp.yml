@@ -21,8 +21,8 @@ jobs:
     - name: install dependencies
       run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
 
-    - name: generate models and build (strict, warnings as errors)
-      run: make generate_models && ./generate_models && make strict
+    - name: build (strict, warnings as errors)
+      run: make strict
 
     - name: http parser unit + fuzz tests (ASan + UBSan)
       run: make http-test
@@ -71,7 +71,7 @@ jobs:
     - name: flawfinder_scan
       run: |
         python -m pip install flawfinder
-        flawfinder --minlevel=1 src include generate_models.c || true
+        flawfinder --minlevel=1 src include || true
         flawfinder --sarif ./ > flawfinder.sarif
         python -c 'import json; d=json.load(open("flawfinder.sarif")); r=d["runs"][0]; r["results"]=[x for x in r["results"] if x.get("rank",0)>=0.6]; json.dump(d,open("flawfinder.sarif","w")); print("flawfinder: reporting", len(r["results"]), "finding(s) at level>=3")'
 

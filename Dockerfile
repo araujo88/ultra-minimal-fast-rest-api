@@ -17,9 +17,9 @@ WORKDIR /app
 COPY --chown=appuser:appuser . /app
 USER appuser
 
-# Generate the model header and build at image-build time, so a broken build
-# fails here rather than at container start.
-RUN make generate_models && ./generate_models && make
+# Build at image-build time, so a broken build fails here rather than at
+# container start.
+RUN make
 
 EXPOSE 9002
 
