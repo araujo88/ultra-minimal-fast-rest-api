@@ -69,3 +69,21 @@ void response_send(int fd, const char *status, const char *content_type, const c
         return;
     response_send_all(fd, msg, (size_t)n);
 }
+
+void response_send_unauthorized(int fd, const char *realm)
+{
+    char date[32];
+    now_str(date, sizeof(date));
+    const char *conn = g_conn_close ? "close" : "keep-alive";
+    const char *body = "{\"msg\": \"unauthorized\"}";
+
+    char msg[RESPONSE_MAX];
+    int n = snprintf(msg, sizeof(msg),
+                     "HTTP/1.1 401 Unauthorized\r\nDate: %s\r\nContent-Type: application/json\r\n"
+                     "Content-Length: %zu\r\nWWW-Authenticate: Basic realm=\"%s\"\r\n"
+                     "Connection: %s\r\n\r\n%s",
+                     date, strlen(body), realm, conn, body);
+    if (n < 0 || (size_t)n >= sizeof(msg))
+        return;
+    response_send_all(fd, msg, (size_t)n);
+}

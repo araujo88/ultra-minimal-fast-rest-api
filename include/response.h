@@ -14,6 +14,10 @@ void response_send_all(int fd, const char *data, size_t len);
 // formatted with ctime_r so it is safe to call from multiple worker threads.
 void response_send(int fd, const char *status, const char *content_type, const char *body);
 
+// Send a 401 Unauthorized with a WWW-Authenticate: Basic challenge for the
+// given realm. Honors the per-worker Connection disposition like response_send.
+void response_send_unauthorized(int fd, const char *realm);
+
 // Print the "[<date>] - " log prefix (thread-safe timestamp).
 void response_log_prefix(void);
 

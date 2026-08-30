@@ -19,10 +19,13 @@ What it is designed to withstand from a client on the connection:
 
 What it deliberately does **not** provide (out of scope):
 
-- Authentication, authorization, sessions, or TLS. The `ALLOWED_HOSTS` IP
-  allowlist is a coarse convenience, not an authentication mechanism; it is
-  trivially spoofable across untrusted networks and defaults to permissive in
-  the Docker image.
+- TLS. Traffic is plain HTTP.
+- Strong authentication or sessions. An **optional** HTTP Basic auth is
+  available (`BASIC_AUTH="user:password"`), but Basic auth over plain HTTP only
+  base64-encodes credentials — it is minimal auth for a trusted/dev network, not
+  a substitute for TLS. Off by default. The `ALLOWED_HOSTS` IP allowlist is a
+  coarse convenience, not authentication; it is trivially spoofable across
+  untrusted networks and defaults to permissive in the Docker image.
 - Rate limiting / robust DoS protection. A fixed worker pool with a receive
   timeout bounds slow-client damage but is not a hardened front end. Put a real
   reverse proxy in front if you expose it.
