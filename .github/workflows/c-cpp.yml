@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [ "main" ]
 
+permissions:
+  contents: read
+  security-events: write # upload flawfinder SARIF to code scanning
+
 jobs:
   build:
 
@@ -51,8 +55,24 @@ jobs:
         make clean
         cd tests && python -m pytest -v
 
+    # flawfinder scan. Levels 1-2 fire on every fixed-size `char` array
+    # declaration and every strlen() call -- inherent noise for buffer-based C,
+    # not defects: all runtime buffers are written with bounded snprintf / a
+    # length-checked string builder, and the code is ASan/UBSan-clean and
+    # exercised by the malformed-input regression suite. We report level 3+ to
+    # code scanning, which still catches the dangerous unbounded APIs that
+    # actually matter (strcpy/strcat/sprintf/gets/scanf/system -- level 4-5),
+    # so any reintroduction surfaces. `--sarif` forces minlevel=0, so we filter
+    # the SARIF by severity (flawfinder rank = level x 0.2; level 3 = 0.6) after
+    # the fact. The full report is printed to the build log for transparency.
     - name: flawfinder_scan
-      uses: david-a-wheeler/flawfinder@2.0.19
+      run: |
+        python -m pip install flawfinder
+        flawfinder --minlevel=1 src include generate_models.c || true
+        flawfinder --sarif ./ > flawfinder.sarif
+        python -c 'import json; d=json.load(open("flawfinder.sarif")); r=d["runs"][0]; r["results"]=[x for x in r["results"] if x.get("rank",0)>=0.6]; json.dump(d,open("flawfinder.sarif","w")); print("flawfinder: reporting", len(r["results"]), "finding(s) at level>=3")'
+
+    - name: upload flawfinder sarif
+      uses: github/codeql-action/upload-sarif@v3
       with:
-        arguments: '--sarif ./'
-        output: 'flawfinder_results.sarif'
+        sarif_file: flawfinder.sarif
