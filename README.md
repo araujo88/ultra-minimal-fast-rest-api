@@ -104,8 +104,22 @@ Example JSON entry:
 
 ## Configuration
 
-- **Bind address / port / connections** — arguments to `create_server(...)` in
-  [`src/main.c`](src/main.c). Defaults: `0.0.0.0`, `9002`, `10`.
+Configure via CLI flags or environment variables (a flag overrides its env
+default; both override the built-in default):
+
+| Setting | CLI flag | Env var | Default |
+| ------- | -------- | ------- | ------- |
+| Bind address | `-H, --host` | `BIND_ADDRESS` | `0.0.0.0` |
+| Listen port | `-p, --port` | `PORT` | `9002` |
+| Worker threads | `-t, --threads` | `THREADS` | `8` |
+| Listen backlog | `-b, --backlog` | `BACKLOG` | `10` |
+
+```bash
+./server --host 127.0.0.1 --port 8080 --threads 16
+PORT=8080 THREADS=16 ./server        # equivalent via env
+./server --help                      # full usage
+```
+
 - **`ALLOWED_HOSTS`** (environment variable) — comma-separated IPv4 allowlist,
   or `*` to allow all clients. Invalid entries are ignored; if unset, the
   compile-time default in [`include/settings.h`](include/settings.h) applies

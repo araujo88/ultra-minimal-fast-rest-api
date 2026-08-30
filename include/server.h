@@ -22,6 +22,6 @@
 extern volatile sig_atomic_t server_running;
 
 void send_data(void *client_socket);
-void create_server(char *ip, int port, int max_connections, thread_pool_t *pool);
+void create_server(const char *ip, int port, int max_connections, thread_pool_t *pool);
 
 #endif

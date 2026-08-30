@@ -30,47 +30,50 @@ def _remove_db():
             pass
 
 
-def _port_open():
+def _port_open(port=PORT):
     try:
-        with socket.create_connection((HOST, PORT), timeout=0.25):
+        with socket.create_connection((HOST, port), timeout=0.25):
             return True
     except OSError:
         return False
 
 
-def wait_ready(proc, timeout=10.0):
+def wait_ready(proc, timeout=10.0, port=PORT):
     deadline = time.time() + timeout
     while time.time() < deadline:
         if proc.poll() is not None:
             return False
-        if _port_open():
+        if _port_open(port):
             return True
         time.sleep(0.05)
     return False
 
 
-def wait_closed(timeout=5.0):
+def wait_closed(timeout=5.0, port=PORT):
     deadline = time.time() + timeout
     while time.time() < deadline:
-        if not _port_open():
+        if not _port_open(port):
             return True
         time.sleep(0.05)
     return False
 
 
 class ServerProcess:
-    """A single server instance. Optionally starts from a clean database and
-    with extra environment variables (e.g. ALLOWED_HOSTS)."""
+    """A single server instance. Optionally starts from a clean database, with
+    extra environment variables (e.g. ALLOWED_HOSTS / PORT), extra CLI args, and
+    on a non-default port."""
 
-    def __init__(self, clean_db=True, env=None):
+    def __init__(self, clean_db=True, env=None, port=PORT, args=None):
         self.clean_db = clean_db
         self.env = env
+        self.port = port
+        self.args = args or []
         self.proc = None
         self._log = None
 
     def start(self):
         # A stale instance on the port would make the new one fail to bind.
-        assert wait_closed(2.0), "port 9002 still in use before start"
+        assert wait_closed(2.0, port=self.port), f"port {self.port} still in use before start"
         if self.clean_db:
             _remove_db()
         self._log = tempfile.TemporaryFile(mode="w+")
@@ -79,10 +82,10 @@ class ServerProcess:
             proc_env = os.environ.copy()
             proc_env.update(self.env)
         self.proc = subprocess.Popen(
-            [SERVER_BIN], cwd=REPO_ROOT, stdout=self._log, stderr=subprocess.STDOUT,
-            env=proc_env,
+            [SERVER_BIN, *self.args], cwd=REPO_ROOT, stdout=self._log,
+            stderr=subprocess.STDOUT, env=proc_env,
         )
-        if not wait_ready(self.proc):
+        if not wait_ready(self.proc, port=self.port):
             self.stop()
             raise RuntimeError("server did not become ready")
         return self
@@ -98,7 +101,7 @@ class ServerProcess:
                 self.proc.kill()
                 self.proc.wait(timeout=5.0)
         self.proc = None
-        wait_closed(3.0)
+        wait_closed(3.0, port=self.port)
 
 
 def raw_send(payload, recv=True, timeout=3.0, half_close=True):

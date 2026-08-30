@@ -28,8 +28,11 @@ def server_manager():
     (e.g. persistence across a restart). Cleans up all instances afterwards."""
     procs = []
 
-    def factory(clean_db=True, env=None):
-        proc = ServerProcess(clean_db=clean_db, env=env).start()
+    def factory(clean_db=True, env=None, port=None, args=None):
+        kwargs = {"clean_db": clean_db, "env": env, "args": args}
+        if port is not None:
+            kwargs["port"] = port
+        proc = ServerProcess(**kwargs).start()
         procs.append(proc)
         return proc
 
