@@ -2,8 +2,18 @@
 #include <string.h>
 #include <stdlib.h>
 #include <time.h>
+#include <pthread.h>
 
 sqlite3 *db;
+
+// Serializes writes over the single shared connection. sqlite3_changes()
+// reports the row count of the most recently completed INSERT/UPDATE/DELETE on
+// the connection, so the step()+sqlite3_changes() pair in update/delete is only
+// meaningful if no other writer's statement can complete in between. All write
+// paths (create/update/delete) take this lock so that window is exclusive.
+// Reads (SELECT) do not affect the change counter and stay lock-free; the
+// connection itself is used in SQLite's default serialized threading mode.
+static pthread_mutex_t db_write_lock = PTHREAD_MUTEX_INITIALIZER;
 
 // ---------------------------------------------------------------------------
 // Bounded string builder + JSON serialization
@@ -227,43 +237,43 @@ int get_entry(unsigned int id, char *buffer, size_t cap)
     sb_init(&sb, buffer, cap);
 
     int rc = sqlite3_prepare_v2(db, "SELECT * FROM " TABLE_NAME " WHERE Id = ?;", -1, &stmt, NULL);
-    if (rc == SQLITE_OK)
-    {
-        sqlite3_bind_int64(stmt, 1, (sqlite3_int64)id);
-        int step = sqlite3_step(stmt);
-        if (step == SQLITE_ROW)
-        {
-            int argc = sqlite3_column_count(stmt);
-            char **argv = malloc(sizeof(char *) * argc);
-            char **col = malloc(sizeof(char *) * argc);
-            for (int i = 0; i < argc; i++)
-            {
-                argv[i] = (char *)sqlite3_column_text(stmt, i);
-                col[i] = (char *)sqlite3_column_name(stmt, i);
-            }
-            callback(&sb, argc, argv, col);
-            free(argv);
-            free(col);
-            if (sb.len > 0 && sb.buf[sb.len - 1] == ',')
-                sb.buf[--sb.len] = '\0'; // drop trailing comma
-        }
-    }
-    sqlite3_finalize(stmt);
-
     if (rc != SQLITE_OK)
-        return -1;
+    {
+        sqlite3_finalize(stmt);
+        return DB_ERROR;
+    }
 
-    if (sb.len == 0)
-        sb_puts(&sb, "{}");
+    sqlite3_bind_int64(stmt, 1, (sqlite3_int64)id);
+    int step = sqlite3_step(stmt);
+    if (step != SQLITE_ROW)
+    {
+        sqlite3_finalize(stmt);
+        return (step == SQLITE_DONE) ? DB_NOT_FOUND : DB_ERROR;
+    }
 
-    return sb.truncated ? -1 : 0;
+    int argc = sqlite3_column_count(stmt);
+    char **argv = malloc(sizeof(char *) * argc);
+    char **col = malloc(sizeof(char *) * argc);
+    for (int i = 0; i < argc; i++)
+    {
+        argv[i] = (char *)sqlite3_column_text(stmt, i);
+        col[i] = (char *)sqlite3_column_name(stmt, i);
+    }
+    callback(&sb, argc, argv, col);
+    free(argv);
+    free(col);
+    if (sb.len > 0 && sb.buf[sb.len - 1] == ',')
+        sb.buf[--sb.len] = '\0'; // drop trailing comma
+
+    sqlite3_finalize(stmt);
+    return sb.truncated ? DB_ERROR : DB_OK;
 }
 
 // ---------------------------------------------------------------------------
 // Write paths (fully parameterized: no user data reaches SQL text)
 // ---------------------------------------------------------------------------
 
-void create_entry(char struct_string[NUM_COLS][STR_LEN], char *buffer, size_t cap)
+static int create_entry_impl(char struct_string[NUM_COLS][STR_LEN], char *buffer, size_t cap)
 {
     char sql[SQL_QUERY_SIZE];
     sqlite3_stmt *stmt = NULL;
@@ -300,13 +310,15 @@ void create_entry(char struct_string[NUM_COLS][STR_LEN], char *buffer, size_t ca
     sqlite3_finalize(stmt);
 
     check_sql(rc, NULL, buffer, cap);
+    return (rc == SQLITE_OK) ? DB_OK : DB_ERROR;
 }
 
-void update_entry(unsigned int id, char struct_string[NUM_COLS][STR_LEN], char *buffer, size_t cap)
+static int update_entry_impl(unsigned int id, char struct_string[NUM_COLS][STR_LEN], char *buffer, size_t cap)
 {
     char sql[SQL_QUERY_SIZE];
     sqlite3_stmt *stmt = NULL;
     int i;
+    int changes = 0;
 
     snprintf(sql, sizeof(sql), "UPDATE %s SET", TABLE_NAME);
     for (i = 0; i < NUM_COLS; i++)
@@ -326,27 +338,79 @@ void update_entry(unsigned int id, char struct_string[NUM_COLS][STR_LEN], char *
             sqlite3_bind_text(stmt, i + 1, struct_string[i], -1, SQLITE_TRANSIENT);
         sqlite3_bind_int64(stmt, NUM_COLS + 1, (sqlite3_int64)id);
         rc = sqlite3_step(stmt);
-        rc = (rc == SQLITE_DONE) ? SQLITE_OK : rc;
+        if (rc == SQLITE_DONE)
+        {
+            changes = sqlite3_changes(db);
+            rc = SQLITE_OK;
+        }
     }
     sqlite3_finalize(stmt);
 
-    check_sql(rc, NULL, buffer, cap);
+    if (rc != SQLITE_OK)
+    {
+        check_sql(rc, NULL, buffer, cap);
+        return DB_ERROR;
+    }
+    if (changes == 0)
+        return DB_NOT_FOUND; // no row with that Id
+    check_sql(SQLITE_OK, NULL, buffer, cap);
+    return DB_OK;
 }
 
-void delete_entry(unsigned int id, char *buffer, size_t cap)
+static int delete_entry_impl(unsigned int id, char *buffer, size_t cap)
 {
     sqlite3_stmt *stmt = NULL;
+    int changes = 0;
 
     int rc = sqlite3_prepare_v2(db, "DELETE FROM " TABLE_NAME " WHERE Id = ?;", -1, &stmt, NULL);
     if (rc == SQLITE_OK)
     {
         sqlite3_bind_int64(stmt, 1, (sqlite3_int64)id);
         rc = sqlite3_step(stmt);
-        rc = (rc == SQLITE_DONE) ? SQLITE_OK : rc;
+        if (rc == SQLITE_DONE)
+        {
+            changes = sqlite3_changes(db);
+            rc = SQLITE_OK;
+        }
     }
     sqlite3_finalize(stmt);
 
-    check_sql(rc, NULL, buffer, cap);
+    if (rc != SQLITE_OK)
+    {
+        check_sql(rc, NULL, buffer, cap);
+        return DB_ERROR;
+    }
+    if (changes == 0)
+        return DB_NOT_FOUND; // no row with that Id
+    check_sql(SQLITE_OK, NULL, buffer, cap);
+    return DB_OK;
+}
+
+// Public write entry points: serialize the step()+sqlite3_changes() sequence
+// (and the INSERT step) across all writers on the shared connection.
+
+int create_entry(char struct_string[NUM_COLS][STR_LEN], char *buffer, size_t cap)
+{
+    pthread_mutex_lock(&db_write_lock);
+    int r = create_entry_impl(struct_string, buffer, cap);
+    pthread_mutex_unlock(&db_write_lock);
+    return r;
+}
+
+int update_entry(unsigned int id, char struct_string[NUM_COLS][STR_LEN], char *buffer, size_t cap)
+{
+    pthread_mutex_lock(&db_write_lock);
+    int r = update_entry_impl(id, struct_string, buffer, cap);
+    pthread_mutex_unlock(&db_write_lock);
+    return r;
+}
+
+int delete_entry(unsigned int id, char *buffer, size_t cap)
+{
+    pthread_mutex_lock(&db_write_lock);
+    int r = delete_entry_impl(id, buffer, cap);
+    pthread_mutex_unlock(&db_write_lock);
+    return r;
 }
 
 // ---------------------------------------------------------------------------
