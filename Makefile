@@ -37,5 +37,11 @@ asan: clean all
 strict: CC_FLAGS += -Werror
 strict: clean all
 
+# Unit + fuzz harness for the pure HTTP parsers (no sockets/DB). Runs under the
+# sanitizers so the fuzz loop actually catches out-of-bounds access.
+http-test: $(SRC_DIR)/http.c tests/http_smoke.c
+	$(CC) $(CC_FLAGS) $(SAN_FLAGS) -I$(HDR_DIR) $^ -o http_test
+	./http_test
+
 clean:
-	rm -rf $(BIN_FILE) $(OBJ_DIR) $(TBN_DIR) *.db generate_models
+	rm -rf $(BIN_FILE) $(OBJ_DIR) $(TBN_DIR) *.db generate_models http_test
