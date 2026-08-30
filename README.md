@@ -66,9 +66,10 @@ Contains the database model. On this example, the model consists of a simple "us
 }
 ```
 
-### routes.h
+### Routing
 
-Contains the method to automatically generate basic CRUD routes. Example:
+Requests are dispatched in `server.c` (`route_request`) by exact method and
+path against the model's table name. The available routes are:
 
 `GET /` - root with "Hello world" message <br>
 `GET /users` - lists all users in .json format <br>
