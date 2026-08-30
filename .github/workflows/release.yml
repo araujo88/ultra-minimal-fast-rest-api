@@ -1,0 +1,204 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Semver bump over the latest v*.*.* tag"
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+        default: patch
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  version:
+    name: Resolve version
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.x"
+
+      - name: Build and test (release gate)
+        run: |
+          make strict
+          python -m pip install --upgrade pip
+          python -m pip install pytest requests
+          make clean
+          cd tests && python -m pytest -q
+
+      - name: Resolve release tag
+        id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_BUMP: ${{ github.event.inputs.bump }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT_NAME" != "workflow_dispatch" ]; then
+            next="$REF_NAME"
+            echo "Tag push: $next"
+          else
+            BUMP="${INPUT_BUMP:-patch}"
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git fetch --tags --force
+
+            latest=""
+            while IFS= read -r t; do
+              if [[ "$t" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                latest="$t"
+                break
+              fi
+            done < <(git tag -l 'v*' --sort=-v:refname)
+
+            if [ -z "$latest" ]; then
+              case "$BUMP" in
+                major) next="v1.0.0" ;;
+                *) next="v0.1.0" ;;
+              esac
+              echo "Latest stable tag: <none>; first release ($BUMP) -> $next"
+            else
+              ver="${latest#v}"
+              major="${ver%%.*}"; rest="${ver#*.}"
+              minor="${rest%%.*}"; patch="${rest#*.}"
+              case "$BUMP" in
+                major) major=$((major + 1)); minor=0; patch=0 ;;
+                minor) minor=$((minor + 1)); patch=0 ;;
+                patch) patch=$((patch + 1)) ;;
+                *) echo "unknown bump: $BUMP" >&2; exit 1 ;;
+              esac
+              next="v${major}.${minor}.${patch}"
+              echo "Bump: $latest -> $next"
+            fi
+
+            git tag -a "$next" -m "$next"
+            git push origin "$next"
+          fi
+
+          echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          echo "tag=$next" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build ${{ matrix.label }}
+    needs: version
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            label: linux-amd64
+          - runner: ubuntu-24.04-arm
+            label: linux-arm64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.version.outputs.tag }}
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
+
+      - name: Build
+        run: make VERSION=${{ needs.version.outputs.tag }}
+
+      - name: Verify stamped version
+        env:
+          VERSION: ${{ needs.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          got="$(./server --version)"
+          echo "server --version -> $got"
+          if [ "$got" != "$VERSION" ]; then
+            echo "expected $VERSION, got $got" >&2
+            exit 1
+          fi
+
+      - name: Stage artifact
+        run: |
+          set -euo pipefail
+          mkdir -p "dist/server-${{ matrix.label }}"
+          cp server LICENSE README.md "dist/server-${{ matrix.label }}/"
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: server-${{ matrix.label }}
+          path: dist/server-${{ matrix.label }}/*
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: Publish release
+    needs: [version, build]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - name: Download binaries
+        uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+
+      - name: Package archives
+        env:
+          VERSION: ${{ needs.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          out="$PWD/dist"
+          for dir in artifacts/server-*; do
+            platform="$(basename "$dir")"          # server-linux-amd64
+            platform="${platform#server-}"          # linux-amd64
+            chmod +x "$dir/server"
+            tar -czf "$out/umfra-${VERSION}-${platform}.tar.gz" -C "$dir" server LICENSE README.md
+          done
+          (cd dist && sha256sum ./*.tar.gz | sed 's|\./||' | tee SHA256SUMS.txt)
+          ls -l dist
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ needs.version.outputs.tag }}
+          name: ${{ needs.version.outputs.tag }}
+          prerelease: ${{ needs.version.outputs.prerelease == 'true' }}
+          body: |
+            Prebuilt `server` binaries for Linux (amd64, arm64).
+
+            **Runtime dependency:** the binary dynamically links libsqlite3
+            (`libsqlite3.so.0`); install it on the target, e.g.
+            `apt-get install -y libsqlite3-0`. Linux / POSIX only.
+
+            Verify downloads with `sha256sum -c SHA256SUMS.txt`.
+          files: |
+            dist/*.tar.gz
+            dist/SHA256SUMS.txt
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
