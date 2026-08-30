@@ -26,11 +26,17 @@
 
 #define TABLE_NAME "users"
 
-static const char *TABLE_COLS[NUM_COLS][2] __attribute__((unused)) = {
+// Left unsized so the initializer determines the row count; the assertion below
+// then fails to compile if NUM_COLS disagrees (in either direction), so the
+// hand-edited model can't silently go out of sync.
+static const char *TABLE_COLS[][2] __attribute__((unused)) = {
     {"name", "TEXT"},
     {"surname", "TEXT"},
     {"age", "INT"},
     {"height", "REAL"},
 };
+
+_Static_assert(sizeof(TABLE_COLS) / sizeof(TABLE_COLS[0]) == NUM_COLS,
+               "NUM_COLS must equal the number of TABLE_COLS rows");
 
 #endif
