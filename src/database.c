@@ -421,6 +421,16 @@ void open_database()
 {
     int rc = sqlite3_open("sqlite3.db", &db);
     check_connection(rc);
+
+    // WAL + synchronous=NORMAL: readers no longer block on a writer's commit,
+    // and the writer fsyncs at checkpoints instead of once per transaction.
+    // This trades a small durability window (only the last few transactions can
+    // be lost on an OS/power crash -- an application crash is still safe) for a
+    // large write-throughput gain. journal_mode returns a row, so pass a
+    // callback that ignores it. Best-effort: on a filesystem that rejects WAL
+    // SQLite falls back to the previous mode.
+    sqlite3_exec(db, "PRAGMA journal_mode=WAL;", NULL, NULL, NULL);
+    sqlite3_exec(db, "PRAGMA synchronous=NORMAL;", NULL, NULL, NULL);
 }
 
 void check_version()

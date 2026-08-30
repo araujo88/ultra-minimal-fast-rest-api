@@ -12,7 +12,7 @@ SEED_ROWS="${SEED_ROWS:-40}" # fits under the ~4 KB list response buffer
 [ -x "$BIN" ] || { echo "build the server first (make)"; exit 1; }
 command -v python3 >/dev/null 2>&1 || { echo "python3 required"; exit 1; }
 
-rm -f sqlite3.db
+rm -f sqlite3.db sqlite3.db-wal sqlite3.db-shm
 "$BIN" >/tmp/bench_server.out 2>&1 &
 SRV=$!
 
@@ -36,4 +36,4 @@ python3 "$(dirname "$0")/bench.py" --all --duration "$DURATION"
 
 kill -INT "$SRV" 2>/dev/null
 for _ in $(seq 1 20); do kill -0 "$SRV" 2>/dev/null || break; sleep 0.5; done
-rm -f sqlite3.db
+rm -f sqlite3.db sqlite3.db-wal sqlite3.db-shm

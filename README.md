@@ -123,27 +123,31 @@ hardware-dependent:
 
 | Scenario            | req/s @ c=1 | req/s @ c=16 | p50 @ c=16 | p99 @ c=16 |
 | ------------------- | ----------: | -----------: | ---------: | ---------: |
-| `GET /` (no DB)     |      ~8,000 |      ~26,000 |    0.4 ms  |    1.1 ms  |
-| `GET /users` (list) |      ~6,100 |      ~12,700 |    1.1 ms  |    2.1 ms  |
-| `GET /users/1`      |      ~6,800 |      ~16,500 |    0.7 ms  |    2.2 ms  |
-| `POST /users`       |      ~170   |      ~160    |  100 ms    |  180 ms    |
+| `GET /` (no DB)     |      ~9,500 |      ~27,000 |    0.4 ms  |    0.9 ms  |
+| `GET /users` (list) |      ~5,800 |      ~14,300 |    1.1 ms  |    1.6 ms  |
+| `GET /users/1`      |      ~7,500 |      ~18,600 |    0.6 ms  |    1.8 ms  |
+| `POST /users`       |      ~6,600 |      ~14,600 |    0.7 ms  |   22 ms    |
 
 What this says about "fast":
 
-- **Reads are genuinely fast** — tens of thousands of requests/sec at
-  sub-millisecond median latency. SQLite reads come from the OS page cache, so
-  an application-level response cache would optimize a path that is already fast
-  and would add cache-invalidation and cross-thread-locking risk for no real
-  gain.
-- **Writes are the ceiling, at ~200 req/s**, effectively independent of
-  concurrency, with latency that grows as writers queue up. That is the
-  signature of SQLite's default durable commit: one `fsync` per `INSERT`
-  (`synchronous=FULL`, rollback journal), serialized by the DB write lock. It is
-  correct, durable behavior — not a code defect — but it is the real bottleneck.
-- The cheapest correct way to raise write throughput is **SQLite WAL +
-  `synchronous=NORMAL`** (typically a 10–50× improvement), not a cache and not
-  more worker threads. HTTP keep-alive would further lift the read numbers by
-  removing per-request connection setup. Neither is implemented here yet.
+- **Reads are fast** — tens of thousands of requests/sec at sub-millisecond
+  median latency. SQLite reads come from the OS page cache, so an
+  application-level response cache would optimize a path that is already fast and
+  would add cache-invalidation and cross-thread-locking risk for no real gain.
+- **Writes are now fast too.** The database opens in **WAL mode with
+  `synchronous=NORMAL`** ([`open_database()`](src/database.c)), so the writer
+  fsyncs at checkpoints instead of once per transaction. That took `POST /users`
+  from **~170 req/s (p50 ~100 ms at c=16) to ~14,600 req/s (p50 ~0.7 ms)** — a
+  ~40–90× improvement — and writes now scale with concurrency instead of
+  serializing behind one `fsync` per insert.
+  - *Durability trade-off:* under `synchronous=NORMAL`, an application crash is
+    still safe; only an OS/power crash can lose the last few committed
+    transactions. If you need strict durability, set `synchronous=FULL` (and
+    give back most of the write speedup).
+- Remaining lever: **HTTP keep-alive** would remove the per-request TCP
+  connection setup and lift every endpoint further, but connection setup is
+  already sub-millisecond here, so it is a smaller, higher-risk change — not
+  implemented.
 
 ## Project layout
 
