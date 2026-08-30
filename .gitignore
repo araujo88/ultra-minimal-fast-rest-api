@@ -59,7 +59,7 @@ dkms.conf
 
 # Binaries
 server
-generate_models
+http_test
 
 # Logs
 *.log

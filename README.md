@@ -27,16 +27,27 @@ A minimal and fast RESTful API potentially useful for developing mock APIs with 
 
 ## Getting started
 
-You can define your model at the xml file named `models.xml`. A user model is provided as example for a database table:
+You define your model directly in `include/models.h` as compile-time
+constants; the schema, CRUD SQL, JSON serialization, and routes are all built
+from it. The provided example is a `users` table:
 
+```c
+#define NUM_COLS 4
+#define STR_LEN 256
+#define TABLE_NAME "users"
+
+static const char *TABLE_COLS[NUM_COLS][2] __attribute__((unused)) = {
+    {"name", "TEXT"},
+    {"surname", "TEXT"},
+    {"age", "INT"},
+    {"height", "REAL"},
+};
 ```
-<model name="users">
-<col name="name">TEXT</col>
-<col name="surname">TEXT</col>
-<col name="age">INT</col>
-<col name="height">REAL</col>
-</model>
-```
+
+To change the model, edit `TABLE_NAME` and the `TABLE_COLS` `{name, type}`
+list (supported types: `TEXT`, `INT`, `REAL`), keep `NUM_COLS` equal to the
+number of columns, and rebuild. An `Id INTEGER PRIMARY KEY` column is added
+automatically.
 
 In the `main.c` file, start the server with `create_server("<ip-address>", <port>, <max_number_of_connections>, pool)`. Default IP address is 0.0.0.0, default port is 9002 and default maximum number of simultaneous connections is 10.
 
@@ -54,7 +65,7 @@ Contains the server settings. Currently, the only setting is ALLOWED_HOSTS, whic
 
 ### models.h
 
-Contains the database model. On this example, the model consists of a simple "user" table with fields "name" and "surname". Example of an user entry in JSON format:
+Contains the database model, edited directly (see [Getting started](#getting-started)). The example is a `users` table with fields `name`, `surname`, `age`, and `height`. Example of a user entry in JSON format:
 
 ```
 {
