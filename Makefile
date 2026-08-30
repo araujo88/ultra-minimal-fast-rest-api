@@ -5,7 +5,8 @@ CC_LIBS=-lpthread -lsqlite3
 # Sanitizer flags for the `asan` target (AddressSanitizer + UBSan).
 SAN_FLAGS=-fsanitize=address,undefined -fno-omit-frame-pointer -O1
 
-# Formatter binary (override in CI to pin a version, e.g. clang-format-14).
+# Formatter binary. CI pins clang-format 15 via pip; override to match locally
+# (e.g. `make format-check CLANG_FORMAT=clang-format-15`).
 CLANG_FORMAT ?= clang-format
 FORMAT_FILES=$(wildcard src/*.c) $(wildcard include/*.h)
 

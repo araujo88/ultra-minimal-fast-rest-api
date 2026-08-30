@@ -13,17 +13,21 @@ permissions:
   contents: read
   security-events: write # upload flawfinder SARIF to code scanning
 
-# Runners pinned to ubuntu-22.04 so the lint/static-analysis tool versions
-# (clang-format 14, cppcheck 2.7, valgrind 3.18) are stable and match what the
-# repository was validated against.
+# Runners pinned to ubuntu-22.04 so the static-analysis/test tool versions
+# (cppcheck 2.7, valgrind 3.18) are stable and match what the repository was
+# validated against. clang-format is pinned to an exact version via pip (below)
+# so the format check is reproducible regardless of the runner image.
 
 jobs:
   lint:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v7
-      - name: install clang-format
-        run: sudo apt-get update && sudo apt-get install -y clang-format
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.x"
+      - name: install clang-format 15
+        run: pip install clang-format==15.0.7
       - name: check formatting
         run: make format-check
 
