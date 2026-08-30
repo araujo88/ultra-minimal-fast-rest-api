@@ -5,6 +5,10 @@ CC_LIBS=-lpthread -lsqlite3
 # Sanitizer flags for the `asan` target (AddressSanitizer + UBSan).
 SAN_FLAGS=-fsanitize=address,undefined -fno-omit-frame-pointer -O1
 
+# Formatter binary (override in CI to pin a version, e.g. clang-format-14).
+CLANG_FORMAT ?= clang-format
+FORMAT_FILES=$(wildcard src/*.c) $(wildcard include/*.h)
+
 SRC_DIR=src
 HDR_DIR=include
 OBJ_DIR=obj
@@ -39,6 +43,24 @@ strict: clean all
 http-test: $(SRC_DIR)/http.c tests/http_smoke.c
 	$(CC) $(CC_FLAGS) $(SAN_FLAGS) -I$(HDR_DIR) $^ -o http_test
 	./http_test
+
+# Lint: verify formatting matches .clang-format (CI). Use `make format` to apply.
+format-check:
+	$(CLANG_FORMAT) --dry-run --Werror $(FORMAT_FILES)
+
+format:
+	$(CLANG_FORMAT) -i $(FORMAT_FILES)
+
+# Static analysis.
+cppcheck:
+	cppcheck --enable=warning,performance,portability --inline-suppr --std=c11 \
+		--error-exitcode=1 --suppress=missingIncludeSystem -Iinclude src
+
+# Runtime memory check: drive the running server under Valgrind memcheck.
+valgrind: $(OBJ_DIR) $(BIN_FILE)
+	./run_valgrind.sh
+
+.PHONY: all asan strict http-test format format-check cppcheck valgrind clean
 
 clean:
 	rm -rf $(BIN_FILE) $(OBJ_DIR) $(TBN_DIR) *.db http_test

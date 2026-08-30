@@ -9,7 +9,7 @@
 static void log_status(const char *color, const char *status)
 {
     response_log_prefix();
-    printf("%sHTTP/1.1 %s" "\033[0m\n", color, status);
+    printf("%sHTTP/1.1 %s\033[0m\n", color, status);
 }
 
 void root_view(void *client_socket)

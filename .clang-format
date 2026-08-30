@@ -1,0 +1,5 @@
+# Matches the existing house style (Allman braces, 4-space indent). Tuned to
+# normalize spacing/braces without reordering includes or reflowing lines.
+BasedOnStyle: Microsoft
+SortIncludes: false
+ColumnLimit: 0

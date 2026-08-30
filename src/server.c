@@ -64,8 +64,8 @@ static void send_error(int fd, const char *status, const char *html)
 
 static void route_request(int fd, const char *method, const char *target, const char *body)
 {
-    char base[128];       // "/users"
-    char baseslash[130];  // "/users/"
+    char base[128];      // "/users"
+    char baseslash[130]; // "/users/"
     snprintf(base, sizeof(base), "/%s", TABLE_NAME);
     snprintf(baseslash, sizeof(baseslash), "/%s/", TABLE_NAME);
 
@@ -262,6 +262,15 @@ static void init_allowlist(void)
     }
 }
 
+static void free_allowlist(void)
+{
+    free(g_allowed_hosts);    // the host pointers are either into g_allowed_env_copy
+    free(g_allowed_env_copy); // or static ALLOWED_HOSTS strings -- don't free those
+    g_allowed_hosts = NULL;
+    g_allowed_env_copy = NULL;
+    g_allowed_count = 0;
+}
+
 static bool check_client_ip(int client_socket, struct sockaddr_in *client_address)
 {
     if (g_allow_all)
@@ -347,5 +356,6 @@ void create_server(char *ip, int port, int max_connections, thread_pool_t *pool)
     close(server_socket);
     thread_pool_cleanup(pool);
     close_database();
+    free_allowlist();
     printf("All threads terminated. Database closed.\n");
 }
