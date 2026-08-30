@@ -61,7 +61,11 @@ cppcheck:
 valgrind: $(OBJ_DIR) $(BIN_FILE)
 	./run_valgrind.sh
 
-.PHONY: all asan strict http-test format format-check cppcheck valgrind clean
+# Throughput benchmark: seed a small dataset and sweep read/write scenarios.
+bench: $(OBJ_DIR) $(BIN_FILE)
+	./bench/run_bench.sh
+
+.PHONY: all asan strict http-test format format-check cppcheck valgrind bench clean
 
 clean:
 	rm -rf $(BIN_FILE) $(OBJ_DIR) $(TBN_DIR) *.db http_test

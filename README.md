@@ -110,6 +110,41 @@ Example JSON entry:
   compile-time default in [`include/settings.h`](include/settings.h) applies
   (`127.0.0.1`). Example: `ALLOWED_HOSTS="127.0.0.1,10.0.0.5" ./server`.
 
+## Performance
+
+Reproduce with `make bench` (builds nothing extra; drives the running server
+with `bench/bench.py`, a dependency-free client). The benchmark uses one TCP
+connection per request because the server closes the connection after each
+response — there is no HTTP keep-alive.
+
+Indicative results on the development machine (WSL2, 16 vCPU), 3s per cell —
+treat the **shape** as the takeaway, not the absolute numbers, which are
+hardware-dependent:
+
+| Scenario            | req/s @ c=1 | req/s @ c=16 | p50 @ c=16 | p99 @ c=16 |
+| ------------------- | ----------: | -----------: | ---------: | ---------: |
+| `GET /` (no DB)     |      ~8,000 |      ~26,000 |    0.4 ms  |    1.1 ms  |
+| `GET /users` (list) |      ~6,100 |      ~12,700 |    1.1 ms  |    2.1 ms  |
+| `GET /users/1`      |      ~6,800 |      ~16,500 |    0.7 ms  |    2.2 ms  |
+| `POST /users`       |      ~170   |      ~160    |  100 ms    |  180 ms    |
+
+What this says about "fast":
+
+- **Reads are genuinely fast** — tens of thousands of requests/sec at
+  sub-millisecond median latency. SQLite reads come from the OS page cache, so
+  an application-level response cache would optimize a path that is already fast
+  and would add cache-invalidation and cross-thread-locking risk for no real
+  gain.
+- **Writes are the ceiling, at ~200 req/s**, effectively independent of
+  concurrency, with latency that grows as writers queue up. That is the
+  signature of SQLite's default durable commit: one `fsync` per `INSERT`
+  (`synchronous=FULL`, rollback journal), serialized by the DB write lock. It is
+  correct, durable behavior — not a code defect — but it is the real bottleneck.
+- The cheapest correct way to raise write throughput is **SQLite WAL +
+  `synchronous=NORMAL`** (typically a 10–50× improvement), not a cache and not
+  more worker threads. HTTP keep-alive would further lift the read numbers by
+  removing per-request connection setup. Neither is implemented here yet.
+
 ## Project layout
 
 | File | Responsibility |
@@ -132,6 +167,7 @@ make format-check  # clang-format check (config in .clang-format); `make format`
 make cppcheck      # static analysis
 make http-test     # parser unit tests + fuzz loop under ASan/UBSan
 make valgrind      # run the server under Valgrind while driving requests
+make bench         # throughput benchmark (see Performance)
 ```
 
 Regression tests (manage their own server instance):
