@@ -1,16 +1,12 @@
-attrs==22.1.0
-certifi==2022.6.15
-charset-normalizer==2.1.1
-Faker==14.1.0
-idna==3.3
-iniconfig==1.1.1
-packaging==21.3
-pluggy==1.0.0
-py==1.11.0
-pyparsing==3.0.9
-pytest==7.1.2
-python-dateutil==2.8.2
-requests==2.28.1
-six==1.16.0
-tomli==2.0.1
-urllib3==1.26.12
+# Test-only dependencies (development, not shipped or used by the C server).
+# Lower bounds are set to patched releases to clear known CVEs; pip resolves the
+# newest compatible versions at or above these floors. Transitive packages that
+# had advisories (urllib3, certifi, idna) are floored explicitly below.
+pytest>=9.0.3
+requests>=2.33.0
+faker>=30.0.0
+
+# Security floors for requests' transitive dependencies.
+urllib3>=2.7.0
+certifi>=2024.7.4
+idna>=3.15
