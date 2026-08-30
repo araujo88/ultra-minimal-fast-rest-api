@@ -24,6 +24,9 @@ jobs:
     - name: generate models and build (strict, warnings as errors)
       run: make generate_models && ./generate_models && make strict
 
+    - name: http parser unit + fuzz tests (ASan + UBSan)
+      run: make http-test
+
     - name: sanitizer build + smoke test (ASan + UBSan)
       run: |
         make clean
