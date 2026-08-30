@@ -85,7 +85,8 @@ class TestCrud:
         r = requests.delete(f"{server}users/1", timeout=TIMEOUT)
         assert r.status_code == 200
         assert get_list(server) == []
-        assert requests.get(f"{server}users/1", timeout=TIMEOUT).json() == {}
+        # The resource is gone now -> 404.
+        assert requests.get(f"{server}users/1", timeout=TIMEOUT).status_code == 404
 
 
 # --------------------------------------------------------------------------- #
@@ -104,10 +105,27 @@ class TestStatusCodes:
         assert requests.delete(f"{server}users", timeout=TIMEOUT).status_code == 405
         assert requests.put(f"{server}users", data={"x": "1"}, timeout=TIMEOUT).status_code == 405
 
-    def test_missing_id_returns_empty_object(self, server):
+    def test_get_missing_id_is_404(self, server):
         r = requests.get(f"{server}users/99999", timeout=TIMEOUT)
-        assert r.status_code == 200
-        assert r.json() == {}
+        assert r.status_code == 404
+        assert r.json()["msg"]  # valid JSON error body
+
+    def test_update_missing_id_is_404(self, server):
+        r = requests.put(f"{server}users/99999",
+                         data={"name": "X", "surname": "Y", "age": 2, "height": 1.1},
+                         timeout=TIMEOUT)
+        assert r.status_code == 404
+
+    def test_delete_missing_id_is_404(self, server):
+        assert requests.delete(f"{server}users/99999", timeout=TIMEOUT).status_code == 404
+
+    def test_update_existing_id_is_200(self, server):
+        requests.post(f"{server}users",
+                      data={"name": "A", "surname": "B", "age": 1, "height": 1.0},
+                      timeout=TIMEOUT)
+        assert requests.put(f"{server}users/1",
+                            data={"name": "C", "surname": "D", "age": 2, "height": 1.2},
+                            timeout=TIMEOUT).status_code == 200
 
 
 # --------------------------------------------------------------------------- #

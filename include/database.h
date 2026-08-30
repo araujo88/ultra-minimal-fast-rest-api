@@ -8,12 +8,18 @@
 
 #define SQL_QUERY_SIZE 1024
 
+// Result codes returned by the CRUD functions below, mapped to HTTP status by
+// the views: DB_OK -> 2xx, DB_NOT_FOUND -> 404, DB_ERROR -> 500.
+#define DB_OK 0
+#define DB_ERROR -1
+#define DB_NOT_FOUND 1
+
 void create_table();
 int get_entries(char *buffer, size_t cap);
 int get_entry(unsigned int id, char *buffer, size_t cap);
-void create_entry(char struct_string[NUM_COLS][STR_LEN], char *buffer, size_t cap);
-void update_entry(unsigned int id, char struct_string[NUM_COLS][STR_LEN], char *buffer, size_t cap);
-void delete_entry(unsigned int id, char *buffer, size_t cap);
+int create_entry(char struct_string[NUM_COLS][STR_LEN], char *buffer, size_t cap);
+int update_entry(unsigned int id, char struct_string[NUM_COLS][STR_LEN], char *buffer, size_t cap);
+int delete_entry(unsigned int id, char *buffer, size_t cap);
 void open_database();
 void close_database();
 void check_connection(int rc);

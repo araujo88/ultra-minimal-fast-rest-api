@@ -32,6 +32,18 @@ static void send_status(int fd, const char *status, const char *ctype, const cha
     printf("HTTP/1.1 %s\n", status);
 }
 
+// Log a timestamp and emit a small JSON status response (404/500 paths).
+static void respond_json(void *client_socket, const char *status, const char *body)
+{
+    char *current_date;
+    time_t t;
+    time(&t);
+    current_date = ctime(&t);
+    current_date[strcspn(current_date, "\n")] = 0;
+    printf("[%s] - ", current_date);
+    send_status(*(int *)client_socket, status, "application/json", body);
+}
+
 void root_view(void *client_socket)
 {
     char server_message[BUFFER_SIZE] = {0};
@@ -85,12 +97,15 @@ void get_user_view(void *client_socket, unsigned int id)
     current_date = ctime(&t);
     current_date[strcspn(current_date, "\n")] = 0;
 
-    if (get_entry(id, content, sizeof(content)) != 0)
+    int rc = get_entry(id, content, sizeof(content));
+    if (rc == DB_NOT_FOUND)
     {
-        printf("[%s] - ", current_date);
-        printf("\033[0;31mHTTP/1.1 500 Internal Server Error\033[0m\n");
-        send_status(*(int *)client_socket, "500 Internal Server Error",
-                    "application/json", "{\"msg\": \"response too large\"}");
+        respond_json(client_socket, "404 Not Found", "{\"msg\": \"not found\"}");
+        return;
+    }
+    if (rc != DB_OK)
+    {
+        respond_json(client_socket, "500 Internal Server Error", "{\"msg\": \"response too large\"}");
         return;
     }
 
@@ -111,7 +126,17 @@ void delete_user_view(void *client_socket, unsigned int id)
     current_date = ctime(&t);
     current_date[strcspn(current_date, "\n")] = 0;
 
-    delete_entry(id, content, sizeof(content));
+    int rc = delete_entry(id, content, sizeof(content));
+    if (rc == DB_NOT_FOUND)
+    {
+        respond_json(client_socket, "404 Not Found", "{\"msg\": \"not found\"}");
+        return;
+    }
+    if (rc != DB_OK)
+    {
+        respond_json(client_socket, "500 Internal Server Error", "{\"msg\": \"error\"}");
+        return;
+    }
 
     printf("[%s] - ", current_date);
     printf("\033[0;32mHTTP/1.1 200 OK\033[0m\n");
@@ -130,7 +155,17 @@ void update_user_view(void *client_socket, unsigned int id, char struct_string[N
     current_date = ctime(&t);
     current_date[strcspn(current_date, "\n")] = 0;
 
-    update_entry(id, struct_string, content, sizeof(content));
+    int rc = update_entry(id, struct_string, content, sizeof(content));
+    if (rc == DB_NOT_FOUND)
+    {
+        respond_json(client_socket, "404 Not Found", "{\"msg\": \"not found\"}");
+        return;
+    }
+    if (rc != DB_OK)
+    {
+        respond_json(client_socket, "500 Internal Server Error", "{\"msg\": \"error\"}");
+        return;
+    }
 
     printf("[%s] - ", current_date);
     printf("\033[0;32mHTTP/1.1 200 OK\033[0m\n");
@@ -149,7 +184,11 @@ void create_user_view(void *client_socket, char struct_string[NUM_COLS][STR_LEN]
     current_date = ctime(&t);
     current_date[strcspn(current_date, "\n")] = 0;
 
-    create_entry(struct_string, content, sizeof(content));
+    if (create_entry(struct_string, content, sizeof(content)) != DB_OK)
+    {
+        respond_json(client_socket, "500 Internal Server Error", "{\"msg\": \"error\"}");
+        return;
+    }
 
     printf("[%s] - ", current_date);
     printf("\033[0;32mHTTP/1.1 201 Created\033[0m\n");
