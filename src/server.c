@@ -5,6 +5,7 @@
 #include "../include/settings.h"
 #include "../include/models.h"
 #include "../include/http.h"
+#include "../include/response.h"
 
 extern int server_socket; // owned/defined by main.c
 
@@ -44,42 +45,13 @@ static int make_listening_socket(const char *ip, int port)
     return fd;
 }
 
-// Send the whole buffer, tolerating partial writes and EINTR.
-static void send_all(int fd, const char *data, size_t len)
-{
-    size_t sent = 0;
-    while (sent < len)
-    {
-        ssize_t n = send(fd, data + sent, len - sent, 0);
-        if (n < 0)
-        {
-            if (errno == EINTR)
-                continue;
-            return; // client-local failure: give up on this connection only
-        }
-        sent += (size_t)n;
-    }
-}
-
-static void log_date(void)
-{
-    time_t t;
-    time(&t);
-    char *d = ctime(&t);
-    d[strcspn(d, "\n")] = 0;
-    printf("[%s] - ", d);
-}
-
+// Emit an error response (text/html) and log it. Response construction and the
+// timestamped log prefix live in the response module (response.c).
 static void send_error(int fd, const char *status, const char *html)
 {
-    char msg[BUFFER_SIZE];
-    int n = snprintf(msg, sizeof(msg),
-                     "HTTP/1.1 %s\r\nContent-Type: text/html\r\nContent-Length: %zu\r\n\r\n%s",
-                     status, strlen(html), html);
-    if (n > 0)
-        send_all(fd, msg, (size_t)n);
-    log_date();
+    response_log_prefix();
     printf("HTTP/1.1 %s\n", status);
+    response_send(fd, status, "text/html", html);
 }
 
 // HTTP request framing and request-line/path/id/form parsing live in http.c
@@ -186,7 +158,7 @@ void send_data(void *client_socket)
 
     char *body = find_body(buf);
 
-    log_date();
+    response_log_prefix();
     printf("%s %s\n", method, target);
 
     route_request(fd, method, target, body);
@@ -304,7 +276,7 @@ static bool check_client_ip(int client_socket, struct sockaddr_in *client_addres
             return true;
     }
 
-    log_date();
+    response_log_prefix();
     printf("HTTP/1.1 403 Forbidden (%s)\n", client_ip_address);
     send_error(client_socket, "403 Forbidden", "");
     return false;
