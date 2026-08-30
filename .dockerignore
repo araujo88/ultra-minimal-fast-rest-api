@@ -1,0 +1,10 @@
+.git
+.github
+obj/
+server
+generate_models
+*.o
+*.db
+__pycache__/
+.pytest_cache/
+*.log

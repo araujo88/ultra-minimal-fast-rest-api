@@ -1,10 +1,11 @@
-version: '1.0'
 services:
   server:
     build:
       context: .
       dockerfile: Dockerfile
     ports:
-      - 9002:9002
-    volumes:
-      - .:/server
+      - "9002:9002"
+    # The image defaults ALLOWED_HOSTS to "*" (the container/network boundary is
+    # the real control). To restrict, set a comma-separated IPv4 list here, e.g.
+    # environment:
+    #   ALLOWED_HOSTS: "172.17.0.1,127.0.0.1"

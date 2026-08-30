@@ -378,17 +378,111 @@ void send_data(void *client_socket)
 }
 
 // ---------------------------------------------------------------------------
-// Client IP allowlist (now reading the real accepted peer address)
+// Client IP allowlist (reads the real accepted peer address)
+//
+// The allowed hosts come from the ALLOWED_HOSTS environment variable when set
+// (comma-separated IPv4 addresses; the single value "*" allows all clients),
+// otherwise from the compile-time default in settings.h. This is parsed once
+// at startup from the single-threaded accept loop, so no locking is needed.
+//
+// Rationale: behind Docker's bridge network, clients arrive from the gateway
+// IP (e.g. 172.17.0.1), not 127.0.0.1, so a hardcoded localhost list would
+// reject every forwarded request. Operators set ALLOWED_HOSTS to match their
+// deployment (or "*" when the container/network boundary is the real control).
 // ---------------------------------------------------------------------------
+
+static char **g_allowed_hosts = NULL;
+static int g_allowed_count = 0;
+static bool g_allow_all = false;
+static char *g_allowed_env_copy = NULL; // backing storage for tokenized env
+
+// Maximum length of the ALLOWED_HOSTS value we will parse. A valid list is
+// short (each IPv4 literal is <= 15 chars); anything larger is rejected rather
+// than processed.
+#define ALLOWED_HOSTS_MAX 4096
+
+static void use_default_allowlist(void)
+{
+    g_allowed_hosts = malloc(sizeof(char *) * NUM_ALLOWED_HOSTS);
+    for (int i = 0; i < NUM_ALLOWED_HOSTS; i++)
+        g_allowed_hosts[i] = ALLOWED_HOSTS[i];
+    g_allowed_count = NUM_ALLOWED_HOSTS;
+}
+
+static void init_allowlist(void)
+{
+    // getenv() is untrusted input (CWE-807/CWE-20): treat it as such -- bound
+    // its length and accept only syntactically valid IPv4 literals (or "*"),
+    // discarding anything else. It is also a legitimate operator-controlled
+    // configuration channel; only someone who already controls the process
+    // environment can set it. Flawfinder: ignore getenv
+    const char *env = getenv("ALLOWED_HOSTS");
+    if (!env || !*env)
+    {
+        use_default_allowlist();
+        return;
+    }
+
+    if (strcmp(env, "*") == 0)
+    {
+        g_allow_all = true;
+        printf("Allowlist: * (all clients permitted)\n");
+        return;
+    }
+
+    if (strlen(env) > ALLOWED_HOSTS_MAX)
+    {
+        fprintf(stderr, "ALLOWED_HOSTS too long (> %d bytes); using default allowlist\n",
+                ALLOWED_HOSTS_MAX);
+        use_default_allowlist();
+        return;
+    }
+
+    g_allowed_env_copy = strdup(env);
+    int cap = 1;
+    for (const char *p = env; *p; p++)
+        if (*p == ',')
+            cap++;
+    g_allowed_hosts = malloc(sizeof(char *) * cap);
+
+    for (char *tok = strtok(g_allowed_env_copy, ","); tok != NULL; tok = strtok(NULL, ","))
+    {
+        while (*tok == ' ' || *tok == '\t')
+            tok++;
+        char *end = tok + strlen(tok);
+        while (end > tok && (end[-1] == ' ' || end[-1] == '\t'))
+            *--end = '\0';
+
+        struct in_addr parsed;
+        if (inet_pton(AF_INET, tok, &parsed) == 1)
+            g_allowed_hosts[g_allowed_count++] = tok; // valid IPv4 literal only
+        else if (*tok)
+            fprintf(stderr, "ALLOWED_HOSTS: ignoring invalid entry '%s'\n", tok);
+    }
+
+    // If nothing valid was provided, fall back to the built-in (restrictive)
+    // default rather than silently denying every client.
+    if (g_allowed_count == 0)
+    {
+        fprintf(stderr, "ALLOWED_HOSTS had no valid entries; using default allowlist\n");
+        free(g_allowed_hosts);
+        free(g_allowed_env_copy);
+        g_allowed_env_copy = NULL;
+        use_default_allowlist();
+    }
+}
 
 static bool check_client_ip(int client_socket, struct sockaddr_in *client_address)
 {
+    if (g_allow_all)
+        return true;
+
     char client_ip_address[INET_ADDRSTRLEN] = {0};
     inet_ntop(AF_INET, &client_address->sin_addr, client_ip_address, INET_ADDRSTRLEN);
 
-    for (int i = 0; i < NUM_ALLOWED_HOSTS; i++)
+    for (int i = 0; i < g_allowed_count; i++)
     {
-        if (strcmp(client_ip_address, ALLOWED_HOSTS[i]) == 0)
+        if (strcmp(client_ip_address, g_allowed_hosts[i]) == 0)
             return true;
     }
 
@@ -407,6 +501,8 @@ void create_server(char *ip, int port, int max_connections, thread_pool_t *pool)
     printf("Creating socket ...\n");
     server_socket = make_listening_socket(ip, port);
     printf("Socket created!\n");
+
+    init_allowlist();
 
     printf("Initializing database connection...\n");
     open_database();

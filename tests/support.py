@@ -59,10 +59,12 @@ def wait_closed(timeout=5.0):
 
 
 class ServerProcess:
-    """A single server instance. Optionally starts from a clean database."""
+    """A single server instance. Optionally starts from a clean database and
+    with extra environment variables (e.g. ALLOWED_HOSTS)."""
 
-    def __init__(self, clean_db=True):
+    def __init__(self, clean_db=True, env=None):
         self.clean_db = clean_db
+        self.env = env
         self.proc = None
         self._log = None
 
@@ -72,8 +74,13 @@ class ServerProcess:
         if self.clean_db:
             _remove_db()
         self._log = tempfile.TemporaryFile(mode="w+")
+        proc_env = None
+        if self.env:
+            proc_env = os.environ.copy()
+            proc_env.update(self.env)
         self.proc = subprocess.Popen(
-            [SERVER_BIN], cwd=REPO_ROOT, stdout=self._log, stderr=subprocess.STDOUT
+            [SERVER_BIN], cwd=REPO_ROOT, stdout=self._log, stderr=subprocess.STDOUT,
+            env=proc_env,
         )
         if not wait_ready(self.proc):
             self.stop()
