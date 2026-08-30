@@ -12,7 +12,13 @@ sqlite3 *db;
 // large database contents can never overflow the response buffer. String
 // values are JSON-escaped, and numeric columns are emitted as bare JSON
 // numbers only when the stored value actually parses as a number; otherwise
-// they are quoted. This guarantees the output is always valid JSON.
+// they are quoted.
+//
+// If the content ever exceeds the caller's buffer, the strbuf records that it
+// was truncated instead of silently emitting a half-written object. The read
+// paths propagate that as a failure so the view can return 500 rather than a
+// 200 carrying invalid JSON. Bounded output is thus either complete-and-valid
+// or an explicit error -- never a truncated body advertised as success.
 // ---------------------------------------------------------------------------
 
 typedef struct
@@ -20,6 +26,8 @@ typedef struct
     char *buf;
     size_t cap;
     size_t len;
+    int truncated; // set once any append did not fit; the buffer is then
+                   // incomplete and callers must NOT treat it as valid JSON
 } strbuf_t;
 
 static void sb_init(strbuf_t *sb, char *buf, size_t cap)
@@ -27,6 +35,7 @@ static void sb_init(strbuf_t *sb, char *buf, size_t cap)
     sb->buf = buf;
     sb->cap = cap;
     sb->len = 0;
+    sb->truncated = 0;
     if (cap > 0)
         buf[0] = '\0';
 }
@@ -34,16 +43,25 @@ static void sb_init(strbuf_t *sb, char *buf, size_t cap)
 static void sb_puts(strbuf_t *sb, const char *s)
 {
     if (sb->cap == 0)
+    {
+        if (*s)
+            sb->truncated = 1;
         return;
+    }
     while (*s && sb->len + 1 < sb->cap)
         sb->buf[sb->len++] = *s++;
     sb->buf[sb->len] = '\0';
+    if (*s)
+        sb->truncated = 1; // ran out of room before consuming the whole string
 }
 
 static void sb_putc(strbuf_t *sb, char c)
 {
     if (sb->cap == 0 || sb->len + 1 >= sb->cap)
+    {
+        sb->truncated = 1;
         return;
+    }
     sb->buf[sb->len++] = c;
     sb->buf[sb->len] = '\0';
 }
@@ -134,7 +152,9 @@ int callback(void *arg, int argc, char *argv[], char *azColName[])
     }
     sb_puts(sb, "},");
 
-    return 0;
+    // A non-zero return aborts sqlite3_exec (SQLITE_ABORT). Stop the moment the
+    // output no longer fits so we never keep scanning rows into a dead buffer.
+    return sb->truncated ? 1 : 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -169,7 +189,9 @@ void create_table()
 // Read paths (prepared statements, JSON-serialized via callback)
 // ---------------------------------------------------------------------------
 
-void get_entries(char *buffer, size_t cap)
+// Returns 0 on success (buffer holds complete, valid JSON), -1 on SQL error or
+// on truncation (buffer contents must then be discarded by the caller).
+int get_entries(char *buffer, size_t cap)
 {
     char sql[SQL_QUERY_SIZE];
     char *err = NULL;
@@ -181,15 +203,24 @@ void get_entries(char *buffer, size_t cap)
     sb_puts(&sb, "[");
 
     int rc = sqlite3_exec(db, sql, callback, &sb, &err);
+    if (err != NULL)
+        sqlite3_free(err); // SQLITE_ABORT (our truncation stop) also sets err
+
+    // SQLITE_ABORT is our own truncation signal from callback(); a genuine SQL
+    // failure is anything else that isn't OK. Either way, fail closed.
+    if (sb.truncated || (rc != SQLITE_OK && rc != SQLITE_ABORT))
+        return -1;
 
     if (sb.len > 0 && sb.buf[sb.len - 1] == ',')
         sb.buf[--sb.len] = '\0'; // drop trailing comma from last row
     sb_puts(&sb, "]");
 
-    check_sql(rc, err, NULL, 0);
+    return sb.truncated ? -1 : 0; // closing bracket must have fit too
 }
 
-void get_entry(unsigned int id, char *buffer, size_t cap)
+// Returns 0 on success, -1 on SQL error or truncation. A missing row is a
+// success that yields "{}".
+int get_entry(unsigned int id, char *buffer, size_t cap)
 {
     sqlite3_stmt *stmt = NULL;
     strbuf_t sb;
@@ -219,10 +250,13 @@ void get_entry(unsigned int id, char *buffer, size_t cap)
     }
     sqlite3_finalize(stmt);
 
+    if (rc != SQLITE_OK)
+        return -1;
+
     if (sb.len == 0)
         sb_puts(&sb, "{}");
 
-    check_sql(rc, NULL, NULL, 0);
+    return sb.truncated ? -1 : 0;
 }
 
 // ---------------------------------------------------------------------------

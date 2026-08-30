@@ -9,8 +9,8 @@
 #define SQL_QUERY_SIZE 1024
 
 void create_table();
-void get_entries(char *buffer, size_t cap);
-void get_entry(unsigned int id, char *buffer, size_t cap);
+int get_entries(char *buffer, size_t cap);
+int get_entry(unsigned int id, char *buffer, size_t cap);
 void create_entry(char struct_string[NUM_COLS][STR_LEN], char *buffer, size_t cap);
 void update_entry(unsigned int id, char struct_string[NUM_COLS][STR_LEN], char *buffer, size_t cap);
 void delete_entry(unsigned int id, char *buffer, size_t cap);

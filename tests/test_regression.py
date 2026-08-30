@@ -132,6 +132,19 @@ class TestJsonEscaping:
         got = sorted(row["name"] for row in rows)
         assert got == sorted(self.HOSTILE)
 
+    def test_oversized_list_fails_closed_not_truncated(self, server):
+        # The response buffer is fixed. A list that would overflow it must NOT
+        # come back as a 200 carrying a truncated, unparseable array. The
+        # serializer fails closed: a clean 500 with a valid JSON error body.
+        for i in range(150):  # well past the ~62-row buffer limit
+            requests.post(f"{server}users",
+                          data={"name": f"User{i}", "surname": "Smith", "age": i, "height": 1.5},
+                          timeout=TIMEOUT)
+        r = requests.get(f"{server}users", timeout=TIMEOUT)
+        assert r.status_code == 500
+        assert r.json()["msg"]  # valid JSON error object, not a severed array
+        assert healthy(server)  # and the server keeps serving afterwards
+
 
 # --------------------------------------------------------------------------- #
 # SQL injection resistance
@@ -247,17 +260,50 @@ class TestConcurrency:
         assert all(c == 201 for c in codes), f"non-201 responses: {set(codes)}"
         assert len(get_list(server)) == N  # no dropped/overwritten requests
 
-    def test_slow_client_does_not_wedge_pool(self, server):
-        # Hold one connection open with a partial request (no terminator)...
+    def test_one_slow_client_does_not_block_others(self, server):
+        # With spare workers available, a single stalled client must not delay
+        # a normal request served by another worker.
         slow = socket.create_connection((HOST, PORT), timeout=TIMEOUT)
         try:
             slow.sendall(b"GET /users HT")  # incomplete, never finished
-            # ...a normal request must still be served promptly by another worker.
             start = time.time()
             assert healthy(server)
             assert time.time() - start < 3.0
         finally:
             slow.close()
+
+    # Pool is 8 workers / 8-slot queue (main.c: thread_pool_create(8, 8)) and
+    # the worker read timeout is SO_RCVTIMEO = 10s (server.c).
+    POOL_WORKERS = 8
+    RECV_TIMEOUT = 10.0
+
+    def test_saturated_pool_recovers_within_recv_timeout(self, server):
+        # Occupy *every* worker with a stalled, never-terminated request. Unlike
+        # the single-client case above, there is now no spare capacity: no worker
+        # can service a new request until one of them hits SO_RCVTIMEO. The
+        # contract under test is bounded recovery -- the pool must not be wedged
+        # forever -- so a fresh request must succeed within RCVTIMEO + margin.
+        stalled = []
+        try:
+            for _ in range(self.POOL_WORKERS):
+                s = socket.create_connection((HOST, PORT), timeout=TIMEOUT)
+                s.sendall(b"GET /users HT")  # incomplete -> holds a worker ~10s
+                stalled.append(s)
+            time.sleep(0.5)  # let all stalled connections get picked up
+
+            deadline = time.time() + self.RECV_TIMEOUT + 4.0
+            served = False
+            while time.time() < deadline:
+                try:
+                    if requests.get(f"{server}users", timeout=2).status_code == 200:
+                        served = True
+                        break
+                except requests.RequestException:
+                    pass  # workers still blocked; retry until the deadline
+            assert served, "slow clients wedged every worker; pool never recovered"
+        finally:
+            for s in stalled:
+                s.close()
 
 
 # --------------------------------------------------------------------------- #

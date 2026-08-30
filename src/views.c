@@ -19,6 +19,19 @@ static void send_all(int fd, const char *data, size_t len)
     }
 }
 
+// Emit a small fixed response (used for the fail-closed 500 when a read result
+// does not fit the response buffer). Body is short and known, so it always fits.
+static void send_status(int fd, const char *status, const char *ctype, const char *body)
+{
+    char msg[BUFFER_SIZE];
+    int n = snprintf(msg, sizeof(msg),
+                     "HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %zu\r\n\r\n%s",
+                     status, ctype, strlen(body), body);
+    if (n > 0)
+        send_all(fd, msg, (size_t)n < sizeof(msg) ? (size_t)n : sizeof(msg));
+    printf("HTTP/1.1 %s\n", status);
+}
+
 void root_view(void *client_socket)
 {
     char server_message[BUFFER_SIZE] = {0};
@@ -46,7 +59,14 @@ void get_users_view(void *client_socket)
     current_date = ctime(&t);
     current_date[strcspn(current_date, "\n")] = 0;
 
-    get_entries(content, sizeof(content));
+    if (get_entries(content, sizeof(content)) != 0)
+    {
+        printf("[%s] - ", current_date);
+        printf("\033[0;31mHTTP/1.1 500 Internal Server Error\033[0m\n");
+        send_status(*(int *)client_socket, "500 Internal Server Error",
+                    "application/json", "{\"msg\": \"response too large\"}");
+        return;
+    }
 
     printf("[%s] - ", current_date);
     printf("\033[0;32mHTTP/1.1 200 OK\033[0m\n");
@@ -65,7 +85,14 @@ void get_user_view(void *client_socket, unsigned int id)
     current_date = ctime(&t);
     current_date[strcspn(current_date, "\n")] = 0;
 
-    get_entry(id, content, sizeof(content));
+    if (get_entry(id, content, sizeof(content)) != 0)
+    {
+        printf("[%s] - ", current_date);
+        printf("\033[0;31mHTTP/1.1 500 Internal Server Error\033[0m\n");
+        send_status(*(int *)client_socket, "500 Internal Server Error",
+                    "application/json", "{\"msg\": \"response too large\"}");
+        return;
+    }
 
     printf("[%s] - ", current_date);
     printf("\033[0;32mHTTP/1.1 200 OK\033[0m\n");

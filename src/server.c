@@ -1,21 +1,11 @@
 #define _GNU_SOURCE // strcasestr
 #include "../include/server.h"
 #include "../include/views.h"
-#include "../include/routes.h"
 #include "../include/database.h"
 #include "../include/settings.h"
 #include "../include/models.h"
 #include <limits.h>
 #include <ctype.h>
-
-char url_get_root[URL_MAX_LEN];
-char url_get_entries[URL_MAX_LEN];
-char url_get_entry[URL_MAX_LEN];
-char url_post_entry[URL_MAX_LEN];
-char url_put_entry[URL_MAX_LEN];
-char url_delete_entry[URL_MAX_LEN];
-
-char *routes[NUM_ROUTES] = {url_get_root, url_get_entries, url_get_entry, url_put_entry, url_delete_entry, url_post_entry};
 
 extern int server_socket; // owned/defined by main.c
 
@@ -422,7 +412,6 @@ void create_server(char *ip, int port, int max_connections, thread_pool_t *pool)
     open_database();
     check_version();
     create_table();
-    generate_routes();
 
     if (listen(server_socket, max_connections) < 0)
     {
