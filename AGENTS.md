@@ -54,8 +54,9 @@ client → accept() [server.c] → thread pool queue [threadpool.c]
 
 Module responsibilities:
 
-- `main.c` — startup, install `SIGINT` handler (sets `server_running = 0` only),
-  then `create_server()`.
+- `main.c` — startup: resolve config (defaults < env vars < CLI flags for host /
+  port / threads / backlog), install the `SIGINT` handler (sets
+  `server_running = 0` only), then `create_server()`.
 - `server.c` — socket/bind/listen/accept loop, `ALLOWED_HOSTS` allowlist,
   `route_request()`. Owns transport and routing, not parsing or responses.
 - `http.c` / `http.h` — pure request parsing: `recv_request` (the only I/O),

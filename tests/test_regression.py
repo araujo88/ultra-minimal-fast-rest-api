@@ -9,12 +9,13 @@ Run:  cd tests && pip install -r requirements.txt && pytest -v
 """
 import json
 import socket
+import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor
 
 import requests
 
-from support import HOST, PORT, raw_send, wait_closed
+from support import HOST, PORT, REPO_ROOT, SERVER_BIN, raw_send, wait_closed
 
 TIMEOUT = 5
 
@@ -198,6 +199,36 @@ class TestAllowlist:
         # not in the list, so it is forbidden.
         server_manager(env={"ALLOWED_HOSTS": "not-an-ip, 999.999.1.1, 10.1.2.3"})
         assert requests.get(self.BASE, timeout=TIMEOUT).status_code == 403
+
+
+# --------------------------------------------------------------------------- #
+# Runtime configuration (CLI flags + env vars)
+# --------------------------------------------------------------------------- #
+
+class TestConfig:
+    def test_port_via_env(self, server_manager):
+        server_manager(env={"PORT": "9010"}, port=9010)
+        assert requests.get("http://127.0.0.1:9010/", timeout=TIMEOUT).status_code == 200
+
+    def test_port_via_cli_flag(self, server_manager):
+        server_manager(args=["--port", "9011"], port=9011)
+        assert requests.get("http://127.0.0.1:9011/", timeout=TIMEOUT).status_code == 200
+
+    def test_cli_flag_overrides_env(self, server_manager):
+        # Env sets 9010, CLI sets 9012; the CLI flag must win.
+        server_manager(env={"PORT": "9010"}, args=["--port", "9012"], port=9012)
+        assert requests.get("http://127.0.0.1:9012/", timeout=TIMEOUT).status_code == 200
+        assert wait_closed(0.5, port=9010)  # nothing bound on the (overridden) env port
+
+    def test_thread_count_via_env(self, server_manager):
+        server_manager(env={"THREADS": "2"})  # non-default worker count still serves
+        assert requests.get(f"http://{HOST}:{PORT}/", timeout=TIMEOUT).status_code == 200
+
+    def test_invalid_port_flag_exits_nonzero(self):
+        r = subprocess.run([SERVER_BIN, "--port", "70000"], cwd=REPO_ROOT,
+                           capture_output=True, text=True, timeout=10)
+        assert r.returncode != 0
+        assert "Invalid --port" in r.stderr
 
 
 # --------------------------------------------------------------------------- #

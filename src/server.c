@@ -228,7 +228,8 @@ static void init_allowlist(void)
     // its length and accept only syntactically valid IPv4 literals (or "*"),
     // discarding anything else. It is also a legitimate operator-controlled
     // configuration channel; only someone who already controls the process
-    // environment can set it. Flawfinder: ignore getenv
+    // environment can set it.
+    // Flawfinder: ignore getenv
     const char *env = getenv("ALLOWED_HOSTS");
     if (!env || !*env)
     {
@@ -318,7 +319,7 @@ static bool check_client_ip(int client_socket, struct sockaddr_in *client_addres
 // Server setup and accept loop
 // ---------------------------------------------------------------------------
 
-void create_server(char *ip, int port, int max_connections, thread_pool_t *pool)
+void create_server(const char *ip, int port, int max_connections, thread_pool_t *pool)
 {
     printf("Creating socket ...\n");
     server_socket = make_listening_socket(ip, port);
