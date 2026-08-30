@@ -67,3 +67,8 @@ generate_models
 # virtualenv
 env
 .env
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/

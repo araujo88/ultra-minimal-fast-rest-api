@@ -39,6 +39,18 @@ jobs:
         kill -INT $SRV
         wait $SRV || true
 
+    - name: set up python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.x'
+
+    - name: regression tests
+      run: |
+        python -m pip install --upgrade pip
+        python -m pip install pytest requests
+        make clean
+        cd tests && python -m pytest -v
+
     - name: flawfinder_scan
       uses: david-a-wheeler/flawfinder@2.0.19
       with:
