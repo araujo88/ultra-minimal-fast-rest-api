@@ -143,6 +143,10 @@ C parser harness run by `make http-test`.
 - SQLite runs in its default serialized mode over one shared connection; that
   makes calls memory-safe but does **not** make `sqlite3_changes()` correct
   across threads (see invariant 5).
+- The connection opens in **WAL journal mode with `synchronous=NORMAL`**
+  (`open_database()`) for write throughput. This is orthogonal to the threading
+  mode above. Trade-off: an OS/power crash can lose the last few committed
+  transactions (an application crash is safe).
 - The IP allowlist reads the real accepted peer address. Behind Docker's bridge,
   clients appear as the gateway IP — hence the image sets `ALLOWED_HOSTS=*`.
 - `sqlite3.db` is created in the working directory; tests and `make valgrind`

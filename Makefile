@@ -68,4 +68,4 @@ bench: $(OBJ_DIR) $(BIN_FILE)
 .PHONY: all asan strict http-test format format-check cppcheck valgrind bench clean
 
 clean:
-	rm -rf $(BIN_FILE) $(OBJ_DIR) $(TBN_DIR) *.db http_test
+	rm -rf $(BIN_FILE) $(OBJ_DIR) $(TBN_DIR) *.db *.db-wal *.db-shm http_test

@@ -11,7 +11,7 @@ BIN=./server
 [ -x "$BIN" ] || { echo "build the server first (make)"; exit 1; }
 command -v valgrind >/dev/null 2>&1 || { echo "valgrind not installed"; exit 1; }
 
-rm -f sqlite3.db
+rm -f sqlite3.db sqlite3.db-wal sqlite3.db-shm
 LOG=$(mktemp)
 
 valgrind --leak-check=full \
@@ -49,5 +49,5 @@ code=$?
 
 echo "===== valgrind report ====="
 cat "$LOG"
-rm -f sqlite3.db "$LOG"
+rm -f sqlite3.db sqlite3.db-wal sqlite3.db-shm "$LOG"
 exit "$code"
