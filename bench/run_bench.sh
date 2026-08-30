@@ -30,9 +30,11 @@ for i in $(seq 1 "$SEED_ROWS"); do
         -d "name=U$i&surname=S&age=$i&height=1.5"
 done
 
-echo "Machine: $(nproc) CPUs. Duration: ${DURATION}s per cell. Connection-per-request (no keep-alive)."
+echo "Machine: $(nproc) CPUs. Duration: ${DURATION}s per cell."
 echo
 python3 "$(dirname "$0")/bench.py" --all --duration "$DURATION"
+echo
+python3 "$(dirname "$0")/bench.py" --all --duration "$DURATION" --keepalive
 
 kill -INT "$SRV" 2>/dev/null
 for _ in $(seq 1 20); do kill -0 "$SRV" 2>/dev/null || break; sleep 0.5; done

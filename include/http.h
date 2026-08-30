@@ -9,11 +9,19 @@
 // can be unit-tested / fuzzed in isolation. The only function that performs I/O
 // is recv_request(); the rest operate on caller-owned buffers.
 
-// Read a complete request off fd: headers up to the blank line, then
-// Content-Length body bytes. Bounded by cap; never assumes one recv() == one
-// request. Returns bytes read (>0), 0 on clean peer close before any data,
-// -1 on error.
-ssize_t recv_request(int fd, char *buf, size_t cap);
+// Read one complete request into the front of buf, preserving any trailing
+// bytes that belong to a following (pipelined) request so the connection can be
+// reused (keep-alive). *len is in/out: bytes already buffered on entry, bytes
+// buffered on exit. Returns the byte length of the single request at buf[0]
+// (>0), 0 on a clean peer close with no pending request, -1 on error or a
+// request that does not fit in cap. Never assumes one recv() == one request.
+ssize_t recv_request(int fd, char *buf, size_t cap, size_t *len);
+
+// Decide whether the connection should be kept alive after this request, from
+// its HTTP version (1.1 defaults to keep-alive, 1.0/unknown to close) and an
+// explicit Connection header if present. req must be NUL-terminated at the end
+// of the request. Returns 1 to keep alive, 0 to close.
+int request_keep_alive(const char *req);
 
 // Return a pointer to the start of the body (just past the header terminator),
 // or NULL if no blank line is present in buf.

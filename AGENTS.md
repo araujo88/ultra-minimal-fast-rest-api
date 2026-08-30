@@ -40,13 +40,16 @@ Request path:
 
 ```
 client → accept() [server.c] → thread pool queue [threadpool.c]
-       → worker: recv_request() framing [http.c]
-       → parse request line / id / form [http.c]
-       → route_request() exact method+path [server.c]
-       → view handler [views.c]
-       → SQLite prepared statement [database.c]
-       → bounded JSON build [database.c]
-       → response construction [response.c] → send() → close()
+       → worker send_data() loop over the connection (keep-alive) [server.c]:
+           → recv_request() framing, preserving pipelined bytes [http.c]
+           → parse request line / id / form [http.c]
+           → route_request() exact method+path [server.c]
+           → view handler [views.c]
+           → SQLite prepared statement [database.c]
+           → bounded JSON build [database.c]
+           → response construction [response.c] → send()
+         (repeat until Connection: close / HTTP/1.0 / cap / idle timeout)
+       → close()
 ```
 
 Module responsibilities:
@@ -151,3 +154,10 @@ C parser harness run by `make http-test`.
   clients appear as the gateway IP — hence the image sets `ALLOWED_HOSTS=*`.
 - `sqlite3.db` is created in the working directory; tests and `make valgrind`
   clean it up.
+- HTTP keep-alive: `send_data()` loops over one connection while it stays alive.
+  Because the pool is **blocking**, a persistent connection pins a worker for its
+  lifetime, so with 8 workers only ~8 persistent connections are active at once.
+  Bounded by `MAX_KEEPALIVE_REQUESTS` (server sends `Connection: close` at the
+  cap) and `SO_RCVTIMEO` (idle drop). `recv_request` keeps pipelined leftover
+  bytes; `response.c` emits the `Connection` header from a thread-local the
+  transport sets per request.

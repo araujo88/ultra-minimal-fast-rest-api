@@ -116,12 +116,26 @@ static void fuzz(void)
     }
 }
 
+static void test_keep_alive(void)
+{
+    // HTTP/1.1 defaults to keep-alive, 1.0 to close.
+    CHECK(request_keep_alive("GET / HTTP/1.1\r\nHost: x\r\n\r\n") == 1);
+    CHECK(request_keep_alive("GET / HTTP/1.0\r\nHost: x\r\n\r\n") == 0);
+    // Explicit Connection header wins over the version default, case-insensitive.
+    CHECK(request_keep_alive("GET / HTTP/1.1\r\nConnection: close\r\n\r\n") == 0);
+    CHECK(request_keep_alive("GET / HTTP/1.0\r\nConnection: keep-alive\r\n\r\n") == 1);
+    CHECK(request_keep_alive("GET / HTTP/1.1\r\nConnection: Close\r\n\r\n") == 0);
+    // No recognizable version -> close.
+    CHECK(request_keep_alive("garbage") == 0);
+}
+
 int main(void)
 {
     test_request_line();
     test_parse_id();
     test_find_body();
     test_parse_form();
+    test_keep_alive();
     fuzz();
     if (failures)
     {
