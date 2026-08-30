@@ -24,7 +24,7 @@ void process_file(FILE *input_file, FILE *output_file, char *buffer1)
     ssize_t read;
     size_t len = 0;
     char *buffer2;
-    char c;
+    int c; // getc() returns int; comparing a char to EOF is unreliable
     unsigned int num_cols = 0;
 
     // Extract characters from file and store in character c
@@ -55,7 +55,7 @@ void process_file(FILE *input_file, FILE *output_file, char *buffer1)
                 buffer2 += strlen("<model name=");
                 remove_substring(buffer2, ">");
                 fprintf(output_file, "\n#define TABLE_NAME %s\n", buffer2);
-                fprintf(output_file, "static const char *TABLE_COLS[NUM_COLS][2] = {\n");
+                fprintf(output_file, "static const char *TABLE_COLS[NUM_COLS][2] __attribute__((unused)) = {\n");
                 memset(buffer2, 0, strlen(buffer2));
             }
             else if (strstr(buffer1, "<col name=") != NULL)
@@ -66,7 +66,7 @@ void process_file(FILE *input_file, FILE *output_file, char *buffer1)
 
                 buffer2 = strstr(buffer1, "<col name=");
                 buffer2 += strlen("<col name=");
-                while (buffer2[i] != '>')
+                while (buffer2[i] != '>' && buffer2[i] != '\0' && i < BUFFER_SIZE - 1)
                 {
                     field_name[i] = buffer2[i];
                     i++;
@@ -76,7 +76,7 @@ void process_file(FILE *input_file, FILE *output_file, char *buffer1)
                 buffer2 += strlen(field_name) + 1;
 
                 i = 0;
-                while (buffer2[i] != '<')
+                while (buffer2[i] != '<' && buffer2[i] != '\0' && i < BUFFER_SIZE - 1)
                 {
                     field_type[i] = buffer2[i];
                     i++;

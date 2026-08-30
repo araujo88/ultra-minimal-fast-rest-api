@@ -1,6 +1,6 @@
 # ultra-minimal-fast-rest-api
 
-A minimal and fast RESTful API potentially useful for developing mock APIs with basic CRUD (create/read/update/delete) functionality. Written in C using Unix websockets, POSIX threads for multi-threaded server and integrated with SQLite.
+A minimal and fast RESTful API potentially useful for developing mock APIs with basic CRUD (create/read/update/delete) functionality. Written in C using Unix (BSD) sockets, POSIX threads for a multi-threaded server and integrated with SQLite.
 
 ## Running on Docker
 
@@ -38,11 +38,11 @@ You can define your model at the xml file named `models.xml`. A user model is pr
 </model>
 ```
 
-In the `main.c` file, start the server with `create_server(server_socket, "<ip-adress>", <port>, <max_number_of_connections>)`. Default IP address is 0.0.0.0, default port is 9002 and default maximum number of simultaneous connections is 10.
+In the `main.c` file, start the server with `create_server("<ip-address>", <port>, <max_number_of_connections>, pool)`. Default IP address is 0.0.0.0, default port is 9002 and default maximum number of simultaneous connections is 10.
 
 ### Tests
 
-A simple Python file located in `tests/tests.py` can be used to test each endpoint.
+Simple Python scripts located in `tests/test1.py` and `tests/test2.py` can be used to exercise each endpoint (they require the `requests` package; `test2.py` also uses `faker`).
 
 The server should be available at `http://localhost:9002`.
 
@@ -58,10 +58,11 @@ Contains the database model. On this example, the model consists of a simple "us
 
 ```
 {
-    "id": 1,
+    "Id": 1,
     "name": "Giga",
     "surname": "Chad",
-    "age": 29
+    "age": 29,
+    "height": 1.80
 }
 ```
 

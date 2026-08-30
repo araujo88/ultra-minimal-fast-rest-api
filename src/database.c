@@ -1,154 +1,327 @@
 #include "../include/database.h"
 #include <string.h>
+#include <stdlib.h>
 #include <time.h>
 
 sqlite3 *db;
-int rc;
-char *db_err_msg = (char)0;
+
+// ---------------------------------------------------------------------------
+// Bounded string builder + JSON serialization
+//
+// Every append is bounded by the destination capacity, so hostile or merely
+// large database contents can never overflow the response buffer. String
+// values are JSON-escaped, and numeric columns are emitted as bare JSON
+// numbers only when the stored value actually parses as a number; otherwise
+// they are quoted. This guarantees the output is always valid JSON.
+// ---------------------------------------------------------------------------
+
+typedef struct
+{
+    char *buf;
+    size_t cap;
+    size_t len;
+} strbuf_t;
+
+static void sb_init(strbuf_t *sb, char *buf, size_t cap)
+{
+    sb->buf = buf;
+    sb->cap = cap;
+    sb->len = 0;
+    if (cap > 0)
+        buf[0] = '\0';
+}
+
+static void sb_puts(strbuf_t *sb, const char *s)
+{
+    if (sb->cap == 0)
+        return;
+    while (*s && sb->len + 1 < sb->cap)
+        sb->buf[sb->len++] = *s++;
+    sb->buf[sb->len] = '\0';
+}
+
+static void sb_putc(strbuf_t *sb, char c)
+{
+    if (sb->cap == 0 || sb->len + 1 >= sb->cap)
+        return;
+    sb->buf[sb->len++] = c;
+    sb->buf[sb->len] = '\0';
+}
+
+static void sb_put_json_string(strbuf_t *sb, const char *s)
+{
+    char esc[8];
+    sb_putc(sb, '"');
+    for (; *s; s++)
+    {
+        unsigned char c = (unsigned char)*s;
+        switch (c)
+        {
+        case '"':
+            sb_puts(sb, "\\\"");
+            break;
+        case '\\':
+            sb_puts(sb, "\\\\");
+            break;
+        case '\n':
+            sb_puts(sb, "\\n");
+            break;
+        case '\r':
+            sb_puts(sb, "\\r");
+            break;
+        case '\t':
+            sb_puts(sb, "\\t");
+            break;
+        default:
+            if (c < 0x20)
+            {
+                snprintf(esc, sizeof(esc), "\\u%04x", c);
+                sb_puts(sb, esc);
+            }
+            else
+            {
+                sb_putc(sb, (char)c);
+            }
+        }
+    }
+    sb_putc(sb, '"');
+}
+
+// Emit a value for a column typed INT/REAL: a bare JSON number when the text
+// is genuinely numeric, JSON null when the column is NULL, otherwise a quoted
+// (escaped) string so the output stays valid JSON.
+static void sb_put_numeric(strbuf_t *sb, const char *value)
+{
+    if (value == NULL)
+    {
+        sb_puts(sb, "null");
+        return;
+    }
+    char *end = NULL;
+    strtod(value, &end);
+    if (end != value && *end == '\0')
+        sb_puts(sb, value); // valid number, emit bare
+    else
+        sb_put_json_string(sb, value);
+}
+
+int callback(void *arg, int argc, char *argv[], char *azColName[])
+{
+    strbuf_t *sb = (strbuf_t *)arg;
+
+    sb_puts(sb, "{");
+    for (int i = 0; i < argc; i++)
+    {
+        if (i > 0)
+            sb_putc(sb, ',');
+        sb_put_json_string(sb, azColName[i]);
+        sb_putc(sb, ':');
+
+        int is_numeric = 0;
+        if (strcmp(azColName[i], "Id") == 0)
+            is_numeric = 1;
+        else if (i - 1 >= 0 && i - 1 < NUM_COLS &&
+                 (strcmp(TABLE_COLS[i - 1][1], "INT") == 0 ||
+                  strcmp(TABLE_COLS[i - 1][1], "REAL") == 0))
+            is_numeric = 1;
+
+        if (is_numeric)
+            sb_put_numeric(sb, argv[i]);
+        else if (argv[i] == NULL)
+            sb_puts(sb, "null");
+        else
+            sb_put_json_string(sb, argv[i]);
+    }
+    sb_puts(sb, "},");
+
+    return 0;
+}
+
+// ---------------------------------------------------------------------------
+// Schema
+// ---------------------------------------------------------------------------
 
 void create_table()
 {
     int i = 0;
     char sql[SQL_QUERY_SIZE];
+    char *err = NULL;
 
-    sprintf(sql, "DROP TABLE IF EXISTS %s;"
-                 "CREATE TABLE %s(Id INTEGER PRIMARY KEY,",
-            TABLE_NAME, TABLE_NAME);
+    // IF NOT EXISTS: never destroy existing rows on startup.
+    snprintf(sql, sizeof(sql),
+             "CREATE TABLE IF NOT EXISTS %s(Id INTEGER PRIMARY KEY,", TABLE_NAME);
 
     for (i = 0; i < NUM_COLS; i++)
     {
-        sprintf(sql + strlen(sql), " %s %s,", TABLE_COLS[i][0], TABLE_COLS[i][1]);
+        size_t n = strlen(sql);
+        snprintf(sql + n, sizeof(sql) - n, " %s %s,", TABLE_COLS[i][0], TABLE_COLS[i][1]);
     }
 
-    sprintf(sql + strlen(sql) - 1, ");");
+    size_t n = strlen(sql);
+    if (n >= 1)
+        snprintf(sql + n - 1, sizeof(sql) - (n - 1), ");"); // overwrite trailing ','
 
-    rc = sqlite3_exec(db, sql, 0, 0, &db_err_msg);
-
-    check_sql(NULL);
+    int rc = sqlite3_exec(db, sql, 0, 0, &err);
+    check_sql(rc, err, NULL, 0);
 }
 
-void get_entries(char *buffer)
+// ---------------------------------------------------------------------------
+// Read paths (prepared statements, JSON-serialized via callback)
+// ---------------------------------------------------------------------------
+
+void get_entries(char *buffer, size_t cap)
 {
     char sql[SQL_QUERY_SIZE];
+    char *err = NULL;
+    strbuf_t sb;
 
-    sprintf(sql, "SELECT * FROM %s;", TABLE_NAME);
+    snprintf(sql, sizeof(sql), "SELECT * FROM %s;", TABLE_NAME);
 
-    sprintf(buffer + strlen(buffer), "[\n");
+    sb_init(&sb, buffer, cap);
+    sb_puts(&sb, "[");
 
-    rc = sqlite3_exec(db, sql, callback, buffer, &db_err_msg);
+    int rc = sqlite3_exec(db, sql, callback, &sb, &err);
 
-    if (strcmp(buffer, "[\n") == 0)
-    {
-        sprintf(buffer, "{}");
-    }
-    else
-    {
-        sprintf(buffer + strlen(buffer) - 2, "\n]");
-    }
+    if (sb.len > 0 && sb.buf[sb.len - 1] == ',')
+        sb.buf[--sb.len] = '\0'; // drop trailing comma from last row
+    sb_puts(&sb, "]");
 
-    check_sql(NULL);
+    check_sql(rc, err, NULL, 0);
 }
 
-void get_entry(unsigned int id, char *buffer)
+void get_entry(unsigned int id, char *buffer, size_t cap)
+{
+    sqlite3_stmt *stmt = NULL;
+    strbuf_t sb;
+    sb_init(&sb, buffer, cap);
+
+    int rc = sqlite3_prepare_v2(db, "SELECT * FROM " TABLE_NAME " WHERE Id = ?;", -1, &stmt, NULL);
+    if (rc == SQLITE_OK)
+    {
+        sqlite3_bind_int64(stmt, 1, (sqlite3_int64)id);
+        int step = sqlite3_step(stmt);
+        if (step == SQLITE_ROW)
+        {
+            int argc = sqlite3_column_count(stmt);
+            char **argv = malloc(sizeof(char *) * argc);
+            char **col = malloc(sizeof(char *) * argc);
+            for (int i = 0; i < argc; i++)
+            {
+                argv[i] = (char *)sqlite3_column_text(stmt, i);
+                col[i] = (char *)sqlite3_column_name(stmt, i);
+            }
+            callback(&sb, argc, argv, col);
+            free(argv);
+            free(col);
+            if (sb.len > 0 && sb.buf[sb.len - 1] == ',')
+                sb.buf[--sb.len] = '\0'; // drop trailing comma
+        }
+    }
+    sqlite3_finalize(stmt);
+
+    if (sb.len == 0)
+        sb_puts(&sb, "{}");
+
+    check_sql(rc, NULL, NULL, 0);
+}
+
+// ---------------------------------------------------------------------------
+// Write paths (fully parameterized: no user data reaches SQL text)
+// ---------------------------------------------------------------------------
+
+void create_entry(char struct_string[NUM_COLS][STR_LEN], char *buffer, size_t cap)
 {
     char sql[SQL_QUERY_SIZE];
-
-    sprintf(sql, "SELECT * FROM %s WHERE Id = %u;", TABLE_NAME, id);
-
-    rc = sqlite3_exec(db, sql, callback, buffer, &db_err_msg);
-
-    if (strcmp(buffer, "") == 0)
-    {
-        sprintf(buffer, "{}");
-    }
-    else
-    {
-        sprintf(buffer + strlen(buffer) - 2, "\n");
-    }
-
-    check_sql(NULL);
-}
-
-void create_entry(char struct_string[NUM_COLS][STR_LEN], char *buffer)
-{
-    int i = 0;
-    char sql[SQL_QUERY_SIZE];
-
-    sprintf(sql, "INSERT INTO %s (", TABLE_NAME);
-    for (i = 0; i < NUM_COLS; i++)
-    {
-        sprintf(sql + strlen(sql), "%s, ", TABLE_COLS[i][0]);
-    }
-    sprintf(sql + strlen(sql) - 2, ") VALUES (");
-    for (i = 0; i < NUM_COLS; i++)
-    {
-        sprintf(sql + strlen(sql), "'%s', ", struct_string[i]);
-    }
-    sprintf(sql + strlen(sql) - 2, ");");
-
-    rc = sqlite3_exec(db, sql, 0, 0, &db_err_msg);
-
-    check_sql(buffer);
-}
-
-void update_entry(unsigned int id, char struct_string[NUM_COLS][STR_LEN], char *buffer)
-{
+    sqlite3_stmt *stmt = NULL;
     int i;
-    char sql[SQL_QUERY_SIZE];
 
-    sprintf(sql, "UPDATE %s SET", TABLE_NAME);
+    snprintf(sql, sizeof(sql), "INSERT INTO %s (", TABLE_NAME);
     for (i = 0; i < NUM_COLS; i++)
     {
-        sprintf(sql + strlen(sql), " %s = '%s',", TABLE_COLS[i][0], struct_string[i]);
+        size_t n = strlen(sql);
+        snprintf(sql + n, sizeof(sql) - n, "%s%s", TABLE_COLS[i][0], (i + 1 < NUM_COLS) ? ", " : "");
     }
-    sprintf(sql + strlen(sql) - 1, " WHERE Id = %u;", id);
+    {
+        size_t n = strlen(sql);
+        snprintf(sql + n, sizeof(sql) - n, ") VALUES (");
+    }
+    for (i = 0; i < NUM_COLS; i++)
+    {
+        size_t n = strlen(sql);
+        snprintf(sql + n, sizeof(sql) - n, "?%s", (i + 1 < NUM_COLS) ? ", " : "");
+    }
+    {
+        size_t n = strlen(sql);
+        snprintf(sql + n, sizeof(sql) - n, ");");
+    }
 
-    rc = sqlite3_exec(db, sql, 0, 0, &db_err_msg);
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    if (rc == SQLITE_OK)
+    {
+        for (i = 0; i < NUM_COLS; i++)
+            sqlite3_bind_text(stmt, i + 1, struct_string[i], -1, SQLITE_TRANSIENT);
+        rc = sqlite3_step(stmt);
+        rc = (rc == SQLITE_DONE) ? SQLITE_OK : rc;
+    }
+    sqlite3_finalize(stmt);
 
-    check_sql(buffer);
+    check_sql(rc, NULL, buffer, cap);
 }
 
-void delete_entry(unsigned int id, char *buffer)
+void update_entry(unsigned int id, char struct_string[NUM_COLS][STR_LEN], char *buffer, size_t cap)
 {
     char sql[SQL_QUERY_SIZE];
+    sqlite3_stmt *stmt = NULL;
+    int i;
 
-    sprintf(sql, "DELETE FROM %s WHERE Id = %u;", TABLE_NAME, id);
-
-    rc = sqlite3_exec(db, sql, 0, 0, &db_err_msg);
-
-    check_sql(buffer);
-}
-
-int callback(void *buffer, int argc, char *argv[], char *azColName[])
-{
-    sprintf(buffer + strlen(buffer), "{\n");
-    for (int i = 0; i < argc; i++)
+    snprintf(sql, sizeof(sql), "UPDATE %s SET", TABLE_NAME);
+    for (i = 0; i < NUM_COLS; i++)
     {
-        if (strcmp(azColName[i], "Id") == 0)
-        {
-            sprintf(buffer + strlen(buffer), "\t\"%s\": %s,\n", azColName[i], argv[i] ? argv[i] : "NULL");
-        }
-        else if (strcmp(TABLE_COLS[i - 1][1], "INT") == 0)
-        {
-            sprintf(buffer + strlen(buffer), "\t\"%s\": %s,\n", azColName[i], argv[i] ? argv[i] : "NULL");
-        }
-        else if (strcmp(TABLE_COLS[i - 1][1], "REAL") == 0)
-        {
-            sprintf(buffer + strlen(buffer), "\t\"%s\": %s,\n", azColName[i], argv[i] ? argv[i] : "NULL");
-        }
-        else
-        {
-            sprintf(buffer + strlen(buffer), "\t\"%s\": \"%s\",\n", azColName[i], argv[i] ? argv[i] : "NULL");
-        }
+        size_t n = strlen(sql);
+        snprintf(sql + n, sizeof(sql) - n, " %s = ?%s", TABLE_COLS[i][0], (i + 1 < NUM_COLS) ? "," : "");
     }
-    sprintf(buffer + strlen(buffer) - 2, "},\n");
+    {
+        size_t n = strlen(sql);
+        snprintf(sql + n, sizeof(sql) - n, " WHERE Id = ?;");
+    }
 
-    return 0;
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    if (rc == SQLITE_OK)
+    {
+        for (i = 0; i < NUM_COLS; i++)
+            sqlite3_bind_text(stmt, i + 1, struct_string[i], -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int64(stmt, NUM_COLS + 1, (sqlite3_int64)id);
+        rc = sqlite3_step(stmt);
+        rc = (rc == SQLITE_DONE) ? SQLITE_OK : rc;
+    }
+    sqlite3_finalize(stmt);
+
+    check_sql(rc, NULL, buffer, cap);
 }
+
+void delete_entry(unsigned int id, char *buffer, size_t cap)
+{
+    sqlite3_stmt *stmt = NULL;
+
+    int rc = sqlite3_prepare_v2(db, "DELETE FROM " TABLE_NAME " WHERE Id = ?;", -1, &stmt, NULL);
+    if (rc == SQLITE_OK)
+    {
+        sqlite3_bind_int64(stmt, 1, (sqlite3_int64)id);
+        rc = sqlite3_step(stmt);
+        rc = (rc == SQLITE_DONE) ? SQLITE_OK : rc;
+    }
+    sqlite3_finalize(stmt);
+
+    check_sql(rc, NULL, buffer, cap);
+}
+
+// ---------------------------------------------------------------------------
+// Connection lifecycle + diagnostics
+// ---------------------------------------------------------------------------
 
 void open_database()
 {
-    rc = sqlite3_open("sqlite3.db", &db);
+    int rc = sqlite3_open("sqlite3.db", &db);
     check_connection(rc);
 }
 
@@ -162,18 +335,16 @@ void check_version()
     current_date = ctime(&t);
     current_date[strcspn(current_date, "\n")] = 0;
 
-    rc = sqlite3_prepare_v2(db, "SELECT SQLITE_VERSION()", -1, &res, 0);
-
-    check_sql(NULL);
-
-    rc = sqlite3_step(res);
-
-    if (rc == SQLITE_ROW)
+    int rc = sqlite3_prepare_v2(db, "SELECT SQLITE_VERSION()", -1, &res, 0);
+    if (rc == SQLITE_OK)
     {
-        printf("[%s] - ", current_date);
-        printf("\033[0;33mSQLite version %s\n\033[0m", sqlite3_column_text(res, 0));
+        rc = sqlite3_step(res);
+        if (rc == SQLITE_ROW)
+        {
+            printf("[%s] - ", current_date);
+            printf("\033[0;33mSQLite version %s\n\033[0m", sqlite3_column_text(res, 0));
+        }
     }
-
     sqlite3_finalize(res);
 }
 
@@ -182,7 +353,7 @@ void close_database()
     sqlite3_close(db);
 }
 
-void check_connection()
+void check_connection(int rc)
 {
     char *current_date;
     time_t t;
@@ -199,7 +370,9 @@ void check_connection()
     }
 }
 
-void check_sql(char *buffer)
+// rc/err are per-call locals (no shared global state). If buffer is non-NULL,
+// a JSON status object is written into it (bounded by cap).
+void check_sql(int rc, char *err, char *buffer, size_t cap)
 {
     char *current_date;
     time_t t;
@@ -210,18 +383,17 @@ void check_sql(char *buffer)
 
     if (rc != SQLITE_OK)
     {
-        fprintf(stderr, "\033[0;33mSQL error: %s\n\033[0m", db_err_msg);
-        if (buffer != NULL)
-        {
-            sprintf(buffer, "{\"msg\": \"error\"}");
-        }
+        fprintf(stderr, "\033[0;33mSQL error: %s\n\033[0m", err ? err : sqlite3_errmsg(db));
+        if (buffer != NULL && cap > 0)
+            snprintf(buffer, cap, "{\"msg\": \"error\"}");
     }
     else
     {
         fprintf(stdout, "\033[0;33mSQL query executed successfuly\n\033[0m");
-        if (buffer != NULL)
-        {
-            sprintf(buffer, "{\"msg\": \"success\"}");
-        }
+        if (buffer != NULL && cap > 0)
+            snprintf(buffer, cap, "{\"msg\": \"success\"}");
     }
+
+    if (err != NULL)
+        sqlite3_free(err); // free SQLite-allocated error text (was leaked before)
 }
