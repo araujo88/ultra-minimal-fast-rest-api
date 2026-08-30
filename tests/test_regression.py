@@ -232,6 +232,36 @@ class TestConfig:
 
 
 # --------------------------------------------------------------------------- #
+# Optional HTTP Basic auth (BASIC_AUTH env)
+# --------------------------------------------------------------------------- #
+
+class TestBasicAuth:
+    BASE = f"http://{HOST}:{PORT}/"
+    AUTH = {"BASIC_AUTH": "user:pass"}
+
+    def test_no_credentials_is_401(self, server_manager):
+        server_manager(env=self.AUTH)
+        r = requests.get(f"{self.BASE}users", timeout=TIMEOUT)
+        assert r.status_code == 401
+        assert r.headers.get("WWW-Authenticate", "").startswith("Basic")
+
+    def test_wrong_credentials_is_401(self, server_manager):
+        server_manager(env=self.AUTH)
+        r = requests.get(f"{self.BASE}users", auth=("user", "nope"), timeout=TIMEOUT)
+        assert r.status_code == 401
+
+    def test_correct_credentials_ok(self, server_manager):
+        server_manager(env=self.AUTH)
+        r = requests.get(f"{self.BASE}users", auth=("user", "pass"), timeout=TIMEOUT)
+        assert r.status_code == 200
+        assert r.json() == []
+
+    def test_disabled_by_default(self, server):
+        # No BASIC_AUTH env -> auth off, no credentials needed.
+        assert requests.get(f"{server}users", timeout=TIMEOUT).status_code == 200
+
+
+# --------------------------------------------------------------------------- #
 # SQL injection resistance
 # --------------------------------------------------------------------------- #
 

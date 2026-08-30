@@ -124,6 +124,13 @@ PORT=8080 THREADS=16 ./server        # equivalent via env
   or `*` to allow all clients. Invalid entries are ignored; if unset, the
   compile-time default in [`include/settings.h`](include/settings.h) applies
   (`127.0.0.1`). Example: `ALLOWED_HOSTS="127.0.0.1,10.0.0.5" ./server`.
+- **`BASIC_AUTH`** (environment variable) — set to `user:password` to require
+  HTTP Basic authentication on every request (missing/incorrect credentials get
+  `401` with a `WWW-Authenticate` challenge). Unset (default) means no auth.
+  Example: `BASIC_AUTH="admin:s3cret" ./server`.
+  > ⚠️ Basic auth over plain HTTP only **base64-encodes** credentials (no
+  > encryption). Treat it as minimal auth for a trusted/dev network; put TLS in
+  > front (e.g. a reverse proxy) for anything real. See [SECURITY.md](SECURITY.md).
 
 ## Performance
 

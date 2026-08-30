@@ -1,4 +1,5 @@
-#define _GNU_SOURCE // strcasestr
+#define _GNU_SOURCE  // strcasestr
+#include <strings.h> // strncasecmp
 #include "../include/server.h"
 #include "../include/views.h"
 #include "../include/database.h"
@@ -138,6 +139,10 @@ static void route_request(int fd, const char *method, const char *target, const 
 // blocking pool); an idle connection is also dropped by SO_RCVTIMEO.
 #define MAX_KEEPALIVE_REQUESTS 100
 
+// Optional HTTP Basic auth (defined further below); used by the request loop.
+#define AUTH_REALM "ultra-minimal-fast-rest-api"
+static int basic_auth_ok(const char *req);
+
 void send_data(void *client_socket)
 {
     int fd = *(int *)client_socket;
@@ -172,10 +177,19 @@ void send_data(void *client_socket)
             break; // a malformed request desynchronizes the stream: stop
         }
 
-        char *body = find_body(buf);
-        response_log_prefix();
-        printf("%s %s\n", method, target);
-        route_request(fd, method, target, body);
+        if (!basic_auth_ok(buf))
+        {
+            response_log_prefix();
+            printf("%s %s -> 401 Unauthorized\n", method, target);
+            response_send_unauthorized(fd, AUTH_REALM);
+        }
+        else
+        {
+            char *body = find_body(buf);
+            response_log_prefix();
+            printf("%s %s\n", method, target);
+            route_request(fd, method, target, body);
+        }
 
         // Consume this request and shift any pipelined bytes to the front.
         buf[req_len] = saved;
@@ -295,6 +309,109 @@ static void free_allowlist(void)
     g_allowed_count = 0;
 }
 
+// ---------------------------------------------------------------------------
+// Optional HTTP Basic authentication
+//
+// Enabled only when the BASIC_AUTH environment variable is set to
+// "user:password". We base64-encode that once at startup and compare it,
+// constant-time, against the token in each request's Authorization header --
+// so the untrusted header is never base64-decoded. NOTE: Basic auth over plain
+// HTTP only base64-encodes credentials (no encryption); it is minimal auth for
+// a trusted/dev network, not a substitute for TLS. See SECURITY.md.
+// ---------------------------------------------------------------------------
+
+static char *g_auth_expected = NULL; // base64("user:password"), or NULL if disabled
+
+static char *base64_encode(const char *in)
+{
+    static const char tbl[] =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    size_t len = strlen(in);
+    char *out = malloc(4 * ((len + 2) / 3) + 1);
+    if (!out)
+        return NULL;
+    size_t i, o = 0;
+    for (i = 0; i + 3 <= len; i += 3)
+    {
+        unsigned v = (unsigned char)in[i] << 16 | (unsigned char)in[i + 1] << 8 | (unsigned char)in[i + 2];
+        out[o++] = tbl[(v >> 18) & 63];
+        out[o++] = tbl[(v >> 12) & 63];
+        out[o++] = tbl[(v >> 6) & 63];
+        out[o++] = tbl[v & 63];
+    }
+    if (i < len) // 1 or 2 trailing bytes
+    {
+        int rem = (int)(len - i);
+        unsigned v = (unsigned char)in[i] << 16;
+        if (rem == 2)
+            v |= (unsigned char)in[i + 1] << 8;
+        out[o++] = tbl[(v >> 18) & 63];
+        out[o++] = tbl[(v >> 12) & 63];
+        out[o++] = (rem == 2) ? tbl[(v >> 6) & 63] : '=';
+        out[o++] = '=';
+    }
+    out[o] = '\0';
+    return out;
+}
+
+static void init_basic_auth(void)
+{
+    // Flawfinder: ignore getenv
+    const char *cred = getenv("BASIC_AUTH");
+    if (cred && *cred)
+    {
+        g_auth_expected = base64_encode(cred);
+        printf("Basic auth: enabled\n");
+    }
+}
+
+static void free_basic_auth(void)
+{
+    free(g_auth_expected);
+    g_auth_expected = NULL;
+}
+
+// Constant-time string equality (avoids leaking the match length via timing).
+static int ct_equal(const char *a, const char *b)
+{
+    size_t la = strlen(a), lb = strlen(b);
+    unsigned char diff = (la == lb) ? 0 : 1;
+    for (size_t i = 0; i < la && i < lb; i++)
+        diff |= (unsigned char)(a[i] ^ b[i]);
+    return diff == 0;
+}
+
+// Returns 1 if the request is authorized (auth disabled, or a matching
+// Authorization: Basic <token>). req must be NUL-terminated at the request end.
+static int basic_auth_ok(const char *req)
+{
+    if (g_auth_expected == NULL)
+        return 1; // auth disabled
+
+    const char *h = strcasestr(req, "authorization:");
+    if (!h)
+        return 0;
+    h += strlen("authorization:");
+    while (*h == ' ' || *h == '\t')
+        h++;
+    if (strncasecmp(h, "basic ", 6) != 0)
+        return 0;
+    h += 6;
+    while (*h == ' ' || *h == '\t')
+        h++;
+
+    // Copy the token (up to CR/LF/space) and compare it to the expected value.
+    char token[512];
+    size_t i = 0;
+    while (h[i] && h[i] != '\r' && h[i] != '\n' && h[i] != ' ' && i < sizeof(token) - 1)
+    {
+        token[i] = h[i];
+        i++;
+    }
+    token[i] = '\0';
+    return ct_equal(token, g_auth_expected);
+}
+
 static bool check_client_ip(int client_socket, struct sockaddr_in *client_address)
 {
     if (g_allow_all)
@@ -326,6 +443,7 @@ void create_server(const char *ip, int port, int max_connections, thread_pool_t 
     printf("Socket created!\n");
 
     init_allowlist();
+    init_basic_auth();
 
     printf("Initializing database connection...\n");
     open_database();
@@ -381,5 +499,6 @@ void create_server(const char *ip, int port, int max_connections, thread_pool_t 
     thread_pool_cleanup(pool);
     close_database();
     free_allowlist();
+    free_basic_auth();
     printf("All threads terminated. Database closed.\n");
 }

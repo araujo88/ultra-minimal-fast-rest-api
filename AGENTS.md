@@ -153,6 +153,11 @@ C parser harness run by `make http-test`.
   transactions (an application crash is safe).
 - The IP allowlist reads the real accepted peer address. Behind Docker's bridge,
   clients appear as the gateway IP — hence the image sets `ALLOWED_HOSTS=*`.
+- Optional Basic auth (`BASIC_AUTH="user:password"`, off by default): the
+  expected credential is base64-encoded once at startup and compared
+  constant-time against each request's `Authorization: Basic` token, so the
+  untrusted header is never base64-decoded. It is checked per request in
+  `send_data`. Over plain HTTP this is minimal auth, not a TLS substitute.
 - `sqlite3.db` is created in the working directory; tests and `make valgrind`
   clean it up.
 - HTTP keep-alive: `send_data()` loops over one connection while it stays alive.
