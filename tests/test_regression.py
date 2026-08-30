@@ -147,6 +147,30 @@ class TestJsonEscaping:
 
 
 # --------------------------------------------------------------------------- #
+# Client IP allowlist (ALLOWED_HOSTS env override)
+# --------------------------------------------------------------------------- #
+
+class TestAllowlist:
+    BASE = f"http://{HOST}:{PORT}/"
+
+    def test_default_allows_localhost(self, server):
+        # No ALLOWED_HOSTS set -> compile-time default includes 127.0.0.1.
+        assert requests.get(self.BASE, timeout=TIMEOUT).status_code == 200
+
+    def test_restricted_list_forbids_localhost(self, server_manager):
+        server_manager(env={"ALLOWED_HOSTS": "10.1.2.3"})
+        assert requests.get(self.BASE, timeout=TIMEOUT).status_code == 403
+
+    def test_wildcard_allows_everyone(self, server_manager):
+        server_manager(env={"ALLOWED_HOSTS": "*"})
+        assert requests.get(self.BASE, timeout=TIMEOUT).status_code == 200
+
+    def test_localhost_in_custom_list_allowed(self, server_manager):
+        server_manager(env={"ALLOWED_HOSTS": "10.1.2.3, 127.0.0.1"})
+        assert requests.get(self.BASE, timeout=TIMEOUT).status_code == 200
+
+
+# --------------------------------------------------------------------------- #
 # SQL injection resistance
 # --------------------------------------------------------------------------- #
 
