@@ -1,0 +1,52 @@
+---
+description: Project conventions and invariants for ultra-minimal-fast-rest-api (network-facing C).
+alwaysApply: true
+---
+
+This is a small REST-style HTTP server in C (POSIX sockets, a custom bounded
+thread pool, SQLite). It is network-facing C: correctness, memory safety, and
+clear invariants outrank feature velocity. The authoritative guide is
+[AGENTS.md](mdc:AGENTS.md) — read it for architecture and full commands.
+
+## Build & check commands
+- Build: `make` (or `make strict` for `-Werror`).
+- Format: `make format-check` / `make format` (clang-format, `.clang-format`).
+- Static analysis: `make cppcheck`.
+- Parser unit + fuzz (ASan/UBSan): `make http-test`.
+- Runtime memory check: `make valgrind`.
+- Tests: `cd tests && pytest -v` (the suite builds/manages its own server).
+- All of the above must pass before a PR; CI runs the same stages.
+
+## Module boundaries (put code where the concern lives)
+- `src/server.c` — sockets, accept loop, IP allowlist, `route_request`.
+- `src/http.c` — request framing + parsing (the parsers do no socket I/O).
+- `src/response.c` — HTTP response construction.
+- `src/views.c` — endpoint handlers; map DB results to HTTP status.
+- `src/database.c` — SQLite CRUD (prepared statements) + bounded JSON.
+- `src/threadpool.c` — bounded worker pool.
+- `include/models.h` — the compile-time data model (edit this to change schema).
+
+## Invariants — do not regress (see AGENTS.md for the full list)
+- Requests are framed via `recv_request` (Content-Length aware); never treat one
+  `recv` as a whole request.
+- Route on parsed `(method, target)`, never `strstr` over raw bytes.
+- All SQL values go through `sqlite3_bind_*`; never concatenate input into SQL.
+- JSON is built with the bounded, escaping `strbuf` builder; fail closed (`500`)
+  on overflow.
+- DB writers hold `db_write_lock` across `step()` + `sqlite3_changes()`.
+- The `SIGINT` handler only sets a `sig_atomic_t`; cleanup runs in normal context.
+- A malformed request or DB error fails that request (correct status), never
+  `exit()`s the process.
+- Every fixed buffer is bounded (`snprintf`/bounded loops); no
+  `strcpy`/`strcat`/`sprintf`/unbounded scans.
+- Keep `NUM_COLS` equal to the number of `TABLE_COLS` rows (`_Static_assert`).
+
+## Style
+- C, Allman braces, 4-space indent (run `make format`). Keep the tree clean
+  under `-Werror`, ASan/UBSan, and Valgrind. Keep comments truthful — a
+  misleading comment is treated as a bug.
+
+## Task playbooks
+- Review a PR → [.cursor/commands/review.md](mdc:.cursor/commands/review.md)
+- Fix a bug → [.cursor/commands/bugfix.md](mdc:.cursor/commands/bugfix.md)
+- Implement a feature → [.cursor/commands/feature.md](mdc:.cursor/commands/feature.md)

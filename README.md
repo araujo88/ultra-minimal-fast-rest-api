@@ -1,42 +1,88 @@
 # ultra-minimal-fast-rest-api
 
-A minimal and fast RESTful API potentially useful for developing mock APIs with basic CRUD (create/read/update/delete) functionality. Written in C using Unix (BSD) sockets, POSIX threads for a multi-threaded server and integrated with SQLite.
+A small, dependency-light REST-style HTTP server in C: POSIX sockets, a custom
+bounded thread pool, and SQLite, with the data model and its CRUD routes
+derived from a single compile-time declaration.
 
-## Running on Docker
+It is intended as a **mock/CRUD API for local development**, not as a
+public-facing web server. See [SECURITY.md](SECURITY.md) for the threat model
+and [AUDIT.md](AUDIT.md) for the security review this codebase was hardened
+against.
 
-### Requirements
+## Features
 
-`docker` <br>
-`docker compose`
+- **HTTP/1.1 request handling** with proper framing over the TCP byte stream
+  (headers + `Content-Length` body; a request is not assumed to be one `recv`).
+- **Structured routing** on exact `METHOD` + path — no substring matching of
+  raw bytes.
+- **CRUD over SQLite** using prepared statements with bound parameters (no user
+  input is concatenated into SQL).
+- **Bounded JSON serialization** that escapes all values and fails closed
+  (`500`) rather than emitting a truncated body.
+- **Custom thread pool**: fixed workers, a bounded task queue with backpressure,
+  and clean shutdown on `SIGINT`.
+- **Compile-time model**: define your table once in `include/models.h`; schema,
+  SQL, JSON, and routes follow.
+- **Client IP allowlist**, configurable at runtime via `ALLOWED_HOSTS`.
 
-### Running
+## Quick start (Linux)
 
-`./run_container`
+Requirements: `gcc`, `make`, `libsqlite3-dev`.
 
-## Running locally (Linux)
+```bash
+make          # build ./server  (use `make strict` for -Werror)
+./server      # listens on 0.0.0.0:9002
+```
 
-### Requirements
+Or use the helper: `./run_locally.sh` (clean build + run).
 
-`libsqlite3-dev` <br>
-`make` <br>
-`gcc` <br>
+```bash
+curl -s -X POST localhost:9002/users -d 'name=Giga&surname=Chad&age=29&height=1.80'
+curl -s localhost:9002/users
+```
 
-### Running
+## Running with Docker
 
-`./run_locally`
+Requirements: `docker`, `docker compose`.
 
-## Getting started
+```bash
+./run_container.sh        # docker compose up --build
+```
 
-You define your model directly in `include/models.h` as compile-time
-constants; the schema, CRUD SQL, JSON serialization, and routes are all built
-from it. The provided example is a `users` table:
+The image defaults `ALLOWED_HOSTS=*` because requests forwarded through Docker's
+bridge arrive from the gateway IP, not `127.0.0.1` (see
+[Configuration](#configuration)).
+
+## Endpoints
+
+For the example `users` model:
+
+| Method & path        | Success           | Notes |
+| -------------------- | ----------------- | ----- |
+| `GET /`              | `200` text/html   | "Hello world!" |
+| `GET /users`         | `200` JSON array  | `[]` when empty; `500` if the list exceeds the response buffer |
+| `POST /users`        | `201` JSON        | body is `application/x-www-form-urlencoded` |
+| `GET /users/<id>`    | `200` JSON object | `404` if not found, `400` if `<id>` is non-numeric |
+| `PUT /users/<id>`    | `200` JSON        | `404` if not found, `400` if `<id>` is non-numeric |
+| `DELETE /users/<id>` | `200` JSON        | `404` if not found, `400` if `<id>` is non-numeric |
+
+Unknown routes return `404`; unsupported methods on a known path return `405`;
+database/serialization failures return `500`.
+
+## Defining your model
+
+The model lives in [`include/models.h`](include/models.h) as compile-time
+constants — the schema, CRUD SQL, JSON serialization, and routes are all built
+from it:
 
 ```c
 #define NUM_COLS 4
 #define STR_LEN 256
 #define TABLE_NAME "users"
 
-static const char *TABLE_COLS[NUM_COLS][2] __attribute__((unused)) = {
+// Left unsized so the initializer sets the row count; a _Static_assert then
+// requires it to equal NUM_COLS (so the two can't silently drift).
+static const char *TABLE_COLS[][2] __attribute__((unused)) = {
     {"name", "TEXT"},
     {"surname", "TEXT"},
     {"age", "INT"},
@@ -44,59 +90,65 @@ static const char *TABLE_COLS[NUM_COLS][2] __attribute__((unused)) = {
 };
 ```
 
-To change the model, edit `TABLE_NAME` and the `TABLE_COLS` `{name, type}`
-list (supported types: `TEXT`, `INT`, `REAL`), keep `NUM_COLS` equal to the
-number of columns, and rebuild. An `Id INTEGER PRIMARY KEY` column is added
-automatically.
+Edit `TABLE_NAME` and the `TABLE_COLS` `{name, type}` list (supported types:
+`TEXT`, `INT`, `REAL`), keep `NUM_COLS` equal to the number of columns, and
+rebuild. An `Id INTEGER PRIMARY KEY` column is added automatically. Data is
+stored in `sqlite3.db` in the working directory and persists across restarts.
 
-In the `main.c` file, start the server with `create_server("<ip-address>", <port>, <max_number_of_connections>, pool)`. Default IP address is 0.0.0.0, default port is 9002 and default maximum number of simultaneous connections is 10.
+Example JSON entry:
 
-### Tests
-
-Simple Python scripts located in `tests/test1.py` and `tests/test2.py` can be used to exercise each endpoint (they require the `requests` package; `test2.py` also uses `faker`).
-
-The server should be available at `http://localhost:9002`.
-
-## Project structure overview
-
-### settings.h
-
-Contains the server settings. Currently, the only setting is ALLOWED_HOSTS, which contains an array of strings corresponding to the accepted client IP addresses.
-
-### models.h
-
-Contains the database model, edited directly (see [Getting started](#getting-started)). The example is a `users` table with fields `name`, `surname`, `age`, and `height`. Example of a user entry in JSON format:
-
-```
-{
-    "Id": 1,
-    "name": "Giga",
-    "surname": "Chad",
-    "age": 29,
-    "height": 1.80
-}
+```json
+{ "Id": 1, "name": "Giga", "surname": "Chad", "age": 29, "height": 1.80 }
 ```
 
-### Routing
+## Configuration
 
-Requests are dispatched in `server.c` (`route_request`) by exact method and
-path against the model's table name. The available routes are:
+- **Bind address / port / connections** — arguments to `create_server(...)` in
+  [`src/main.c`](src/main.c). Defaults: `0.0.0.0`, `9002`, `10`.
+- **`ALLOWED_HOSTS`** (environment variable) — comma-separated IPv4 allowlist,
+  or `*` to allow all clients. Invalid entries are ignored; if unset, the
+  compile-time default in [`include/settings.h`](include/settings.h) applies
+  (`127.0.0.1`). Example: `ALLOWED_HOSTS="127.0.0.1,10.0.0.5" ./server`.
 
-`GET /` - root with "Hello world" message <br>
-`GET /users` - lists all users in .json format <br>
-`GET /users/<id>` - list user data by its id <br>
-`PUT /users/<id>` - update user data by its id <br>
-`DELETE /users/<id>` delete user by its id <br>
-`POST /users` - creates a new user <br>
+## Project layout
 
-### database.h
+| File | Responsibility |
+| ---- | -------------- |
+| `src/main.c` | Entry point, `SIGINT` handler (sets a flag; cleanup runs in normal context) |
+| `src/server.c` | Socket setup, accept loop, IP allowlist, routing |
+| `src/http.c` | Request framing and request-line / path / id / form parsing |
+| `src/response.c` | HTTP response construction (status line, headers, body) |
+| `src/views.c` | Per-endpoint handlers; map DB results to HTTP status |
+| `src/database.c` | SQLite CRUD (prepared statements) + bounded JSON serialization |
+| `src/threadpool.c` | Bounded worker pool with backpressure |
+| `include/models.h` | The data model (edit this) |
+| `include/settings.h` | Default client allowlist |
 
-Integrates the requests from the HTTP methods to the SQLite database and parses JSON data.
+## Development
 
-### views.h
+```bash
+make strict        # build with -Werror
+make format-check  # clang-format check (config in .clang-format); `make format` to apply
+make cppcheck      # static analysis
+make http-test     # parser unit tests + fuzz loop under ASan/UBSan
+make valgrind      # run the server under Valgrind while driving requests
+```
 
-The views related to each route and its respective HTTP methods, performing calls to the database.
+Regression tests (manage their own server instance):
 
-### server.h
+```bash
+cd tests && pip install -r requirements.txt && pytest -v
+```
 
-Contains functions that implement a multi-threaded server using Unix sockets and POSIX threads.
+CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs, in stages,
+lint → static analysis → build → tests + valgrind.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow and invariants, and
+[AGENTS.md](AGENTS.md) if you are using an AI coding agent. Report
+vulnerabilities per [SECURITY.md](SECURITY.md).
+
+## License
+
+See [LICENSE](LICENSE).
