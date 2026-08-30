@@ -73,6 +73,6 @@ jobs:
         python -c 'import json; d=json.load(open("flawfinder.sarif")); r=d["runs"][0]; r["results"]=[x for x in r["results"] if x.get("rank",0)>=0.6]; json.dump(d,open("flawfinder.sarif","w")); print("flawfinder: reporting", len(r["results"]), "finding(s) at level>=3")'
 
     - name: upload flawfinder sarif
-      uses: github/codeql-action/upload-sarif@v3
+      uses: github/codeql-action/upload-sarif@v4
       with:
         sarif_file: flawfinder.sarif
