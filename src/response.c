@@ -10,6 +10,15 @@
 // (the read paths fail closed at BUFFER_SIZE/2 before reaching here).
 #define RESPONSE_MAX 8192
 
+// Per-worker connection disposition for the response being built (see header).
+// Thread-local: each worker serves one connection at a time, no races.
+static _Thread_local int g_conn_close = 1;
+
+void response_set_connection_close(int close_after)
+{
+    g_conn_close = close_after ? 1 : 0;
+}
+
 void response_send_all(int fd, const char *data, size_t len)
 {
     size_t sent = 0;
@@ -49,10 +58,11 @@ void response_send(int fd, const char *status, const char *content_type, const c
     char date[32];
     now_str(date, sizeof(date));
 
+    const char *conn = g_conn_close ? "close" : "keep-alive";
     char msg[RESPONSE_MAX];
     int n = snprintf(msg, sizeof(msg),
-                     "HTTP/1.1 %s\r\nDate: %s\r\nContent-Type: %s\r\nContent-Length: %zu\r\n\r\n%s",
-                     status, date, content_type, strlen(body), body);
+                     "HTTP/1.1 %s\r\nDate: %s\r\nContent-Type: %s\r\nContent-Length: %zu\r\nConnection: %s\r\n\r\n%s",
+                     status, date, content_type, strlen(body), conn, body);
 
     // Never send a response whose bytes disagree with its Content-Length.
     if (n < 0 || (size_t)n >= sizeof(msg))

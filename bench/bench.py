@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
 """Dependency-free load generator for ultra-minimal-fast-rest-api.
 
-The server closes the connection after each response (no HTTP keep-alive), so
-this benchmarks the real thing: one TCP connection per request. Each worker
-process runs a sequential connection-per-request loop for the duration; N
-workers give N concurrent in-flight requests.
+Two connection models:
 
-Usage:
-    python3 bench/bench.py --scenario list --concurrency 16 --duration 5
-    python3 bench/bench.py --all            # sweep the standard scenarios/levels
+  * default (connection-per-request): open a socket, send one request, read the
+    response, close. This is how the server was used before keep-alive.
+  * --keepalive: open one socket per worker and send many requests over it,
+    reusing the connection (HTTP/1.1 keep-alive).
 
-Reports requests/sec, mean and p50/p99 latency, and error count.
+Responses are framed by Content-Length (not by connection close), so the client
+is correct under both models.
+
+    python3 bench/bench.py --all --duration 3
+    python3 bench/bench.py --all --duration 3 --keepalive
 """
 import argparse
 import multiprocessing as mp
@@ -30,36 +32,71 @@ SCENARIOS = {
 }
 
 
-def _worker(host, port, payload, deadline):
-    count = 0
-    errors = 0
+def _read_response(sock, buf):
+    """Read exactly one HTTP response. Returns (ok, server_closes, leftover)."""
+    while True:
+        i = buf.find(b"\r\n\r\n")
+        if i != -1:
+            header = buf[:i].lower()
+            cl = 0
+            closes = b"connection: close" in header
+            for line in header.split(b"\r\n"):
+                if line.startswith(b"content-length:"):
+                    cl = int(line.split(b":", 1)[1].strip())
+                    break
+            total = i + 4 + cl
+            if len(buf) >= total:
+                return True, closes, buf[total:]
+        d = sock.recv(65536)
+        if not d:
+            return False, True, b""  # connection closed before a full response
+        buf += d
+
+
+def _worker(host, port, payload, deadline, keepalive):
+    count = errors = 0
     lat = []
+    sock = None
+    leftover = b""
     while time.monotonic() < deadline:
         t0 = time.monotonic()
         try:
-            s = socket.create_connection((host, port), timeout=5)
-            s.sendall(payload)
-            # Read until the server closes the connection (one response).
-            while s.recv(65536):
-                pass
-            s.close()
+            if sock is None:
+                sock = socket.create_connection((host, port), timeout=5)
+                sock.settimeout(5)
+                leftover = b""
+            sock.sendall(payload)
+            ok, server_closes, leftover = _read_response(sock, leftover)
+            if not ok:
+                raise OSError("closed")
             lat.append(time.monotonic() - t0)
             count += 1
+            # Honor the server's decision: it sends Connection: close when it
+            # ends a keep-alive connection (e.g. its per-connection cap). That is
+            # not an error -- just reconnect for the next request.
+            if not keepalive or server_closes:
+                sock.close()
+                sock = None
         except OSError:
             errors += 1
+            if sock is not None:
+                sock.close()
+                sock = None
+    if sock is not None:
+        sock.close()
     return count, errors, lat
 
 
-def run(host, port, scenario, concurrency, duration):
+def run(host, port, scenario, concurrency, duration, keepalive):
     payload = SCENARIOS[scenario]
     deadline = time.monotonic() + duration
     with mp.Pool(concurrency) as pool:
         results = pool.starmap(
-            _worker, [(host, port, payload, deadline)] * concurrency
+            _worker, [(host, port, payload, deadline, keepalive)] * concurrency
         )
     total = sum(r[0] for r in results)
     errors = sum(r[1] for r in results)
-    lat = sorted(l for r in results for l in r[2])
+    lat = sorted(x for r in results for x in r[2])
     rps = total / duration
     if lat:
         mean = sum(lat) / len(lat) * 1e3
@@ -82,16 +119,19 @@ def main():
     ap.add_argument("--scenario", choices=list(SCENARIOS), default="list")
     ap.add_argument("--concurrency", type=int, default=16)
     ap.add_argument("--duration", type=float, default=5.0)
+    ap.add_argument("--keepalive", action="store_true", help="reuse one connection per worker")
     ap.add_argument("--all", action="store_true", help="sweep scenarios x concurrency")
     args = ap.parse_args()
 
+    mode = "keep-alive (connection reused)" if args.keepalive else "connection-per-request"
+    print(f"Model: {mode}")
     if args.all:
         for scenario in ("root", "list", "get_one", "create"):
             for c in (1, 8, 16, 32):
-                run(args.host, args.port, scenario, c, args.duration)
+                run(args.host, args.port, scenario, c, args.duration, args.keepalive)
             print()
     else:
-        run(args.host, args.port, args.scenario, args.concurrency, args.duration)
+        run(args.host, args.port, args.scenario, args.concurrency, args.duration, args.keepalive)
 
 
 if __name__ == "__main__":

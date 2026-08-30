@@ -17,4 +17,10 @@ void response_send(int fd, const char *status, const char *content_type, const c
 // Print the "[<date>] - " log prefix (thread-safe timestamp).
 void response_log_prefix(void);
 
+// Set, for the current worker thread, whether the next response(s) should
+// advertise "Connection: close" (1) or "Connection: keep-alive" (0). The
+// transport (server.c) sets this once per request before dispatching; the value
+// is thread-local so workers never race. Defaults to close.
+void response_set_connection_close(int close_after);
+
 #endif

@@ -1,6 +1,7 @@
 #define _GNU_SOURCE // strcasestr
 #include "../include/http.h"
 #include <string.h>
+#include <strings.h> // strncasecmp
 #include <stdlib.h>
 #include <errno.h>
 #include <limits.h>
@@ -33,29 +34,14 @@ char *find_body(char *buf)
     return NULL;
 }
 
-ssize_t recv_request(int fd, char *buf, size_t cap)
+ssize_t recv_request(int fd, char *buf, size_t cap, size_t *len)
 {
-    size_t total = 0;
-    long header_end = -1;
-    size_t content_length = 0;
-    int have_len = 0;
-
-    while (total < cap - 1)
+    for (;;)
     {
-        ssize_t n = recv(fd, buf + total, cap - 1 - total, 0);
-        if (n < 0)
+        // Try to frame one complete request out of what is already buffered.
+        if (*len > 0)
         {
-            if (errno == EINTR)
-                continue;
-            return -1;
-        }
-        if (n == 0)
-            break; // peer closed
-        total += (size_t)n;
-        buf[total] = '\0';
-
-        if (header_end < 0)
-        {
+            buf[*len] = '\0'; // NUL-terminate for the text header search
             char *p = strstr(buf, "\r\n\r\n");
             size_t sep = 4;
             if (!p)
@@ -65,20 +51,57 @@ ssize_t recv_request(int fd, char *buf, size_t cap)
             }
             if (p)
             {
-                header_end = (long)(p - buf) + (long)sep;
-                content_length = parse_content_length(buf);
-                have_len = 1;
+                size_t header_len = (size_t)(p - buf) + sep;
+                // Bound the Content-Length search to this request's headers so a
+                // pipelined follow-up request's Content-Length is not misread.
+                char saved = buf[header_len];
+                buf[header_len] = '\0';
+                size_t need = header_len + parse_content_length(buf);
+                buf[header_len] = saved;
+
+                if (need <= *len)
+                    return (ssize_t)need; // one full request is buffered
+                if (need >= cap)
+                    return -1; // request larger than the buffer
+            }
+            else if (*len >= cap - 1)
+            {
+                return -1; // no header terminator and the buffer is full
             }
         }
 
-        if (header_end >= 0)
+        ssize_t n = recv(fd, buf + *len, cap - 1 - *len, 0);
+        if (n < 0)
         {
-            size_t body_have = total - (size_t)header_end;
-            if (!have_len || body_have >= content_length)
-                break; // full request received
+            if (errno == EINTR)
+                continue;
+            return -1;
         }
+        if (n == 0)
+            return 0; // peer closed; any partial bytes are discarded
+        *len += (size_t)n;
     }
-    return (ssize_t)total;
+}
+
+int request_keep_alive(const char *req)
+{
+    // Default per HTTP version: keep-alive for 1.1, close for 1.0/unknown.
+    const char *v = strstr(req, "HTTP/1.");
+    int http11 = (v != NULL && v[7] == '1');
+
+    // An explicit Connection header wins over the version default.
+    const char *conn = strcasestr(req, "connection:");
+    if (conn)
+    {
+        conn += strlen("connection:");
+        while (*conn == ' ' || *conn == '\t')
+            conn++;
+        if (strncasecmp(conn, "close", 5) == 0)
+            return 0;
+        if (strncasecmp(conn, "keep-alive", 10) == 0)
+            return 1;
+    }
+    return http11;
 }
 
 // ---------------------------------------------------------------------------

@@ -261,6 +261,7 @@ class TestFraming:
         head = (
             b"POST /users HTTP/1.1\r\n"
             b"Host: x\r\n"
+            b"Connection: close\r\n"  # so the server closes after one response
             b"Content-Type: application/x-www-form-urlencoded\r\n"
             b"Content-Length: %d\r\n\r\n" % len(body)
         )
@@ -292,6 +293,65 @@ class TestFraming:
                       timeout=TIMEOUT)
         rows = get_list(server)
         assert len(find_by_name(rows, "a b&c=d")) == 1
+
+
+# --------------------------------------------------------------------------- #
+# HTTP/1.1 keep-alive (persistent + pipelined connections)
+# --------------------------------------------------------------------------- #
+
+class TestKeepAlive:
+    def test_pipelined_requests_reuse_one_connection(self, server):
+        requests.post(f"{server}users",
+                      data={"name": "A", "surname": "B", "age": 1, "height": 1.0},
+                      timeout=TIMEOUT)
+        s = socket.create_connection((HOST, PORT), timeout=TIMEOUT)
+        s.settimeout(TIMEOUT)
+        try:
+            # Two requests sent back-to-back on one connection, before reading.
+            s.sendall(b"GET /users/1 HTTP/1.1\r\nHost: x\r\n\r\n"
+                      b"GET / HTTP/1.1\r\nHost: x\r\n\r\n")
+            data = b""
+            while data.count(b"HTTP/1.1 200") < 2:
+                d = s.recv(4096)
+                if not d:
+                    break
+                data += d
+        finally:
+            s.close()
+        assert data.count(b"HTTP/1.1 200") == 2  # both served on one connection
+        assert b"Connection: keep-alive" in data
+
+    def test_connection_close_is_honored(self, server):
+        s = socket.create_connection((HOST, PORT), timeout=TIMEOUT)
+        s.settimeout(TIMEOUT)
+        data = b""
+        try:
+            s.sendall(b"GET / HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")
+            while True:  # server must close after this response
+                d = s.recv(4096)
+                if not d:
+                    break
+                data += d
+        finally:
+            s.close()
+        assert b"HTTP/1.1 200" in data
+        assert b"Connection: close" in data
+
+    def test_http10_defaults_to_close(self, server):
+        s = socket.create_connection((HOST, PORT), timeout=TIMEOUT)
+        s.settimeout(TIMEOUT)
+        data = b""
+        try:
+            s.sendall(b"GET / HTTP/1.0\r\nHost: x\r\n\r\n")
+            while True:  # HTTP/1.0 defaults to close
+                d = s.recv(4096)
+                if not d:
+                    break
+                data += d
+        finally:
+            s.close()
+        assert b"200" in data
+        assert b"Connection: close" in data
 
 
 # --------------------------------------------------------------------------- #

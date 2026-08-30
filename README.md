@@ -12,7 +12,8 @@ against.
 ## Features
 
 - **HTTP/1.1 request handling** with proper framing over the TCP byte stream
-  (headers + `Content-Length` body; a request is not assumed to be one `recv`).
+  (headers + `Content-Length` body; a request is not assumed to be one `recv`),
+  including **keep-alive** (persistent connections) and pipelined requests.
 - **Structured routing** on exact `METHOD` + path — no substring matching of
   raw bytes.
 - **CRUD over SQLite** using prepared statements with bound parameters (no user
@@ -113,20 +114,21 @@ Example JSON entry:
 ## Performance
 
 Reproduce with `make bench` (builds nothing extra; drives the running server
-with `bench/bench.py`, a dependency-free client). The benchmark uses one TCP
-connection per request because the server closes the connection after each
-response — there is no HTTP keep-alive.
+with `bench/bench.py`, a dependency-free client). It runs two connection models:
+one TCP connection per request, and HTTP/1.1 **keep-alive** (one connection
+reused for many requests).
 
 Indicative results on the development machine (WSL2, 16 vCPU), 3s per cell —
 treat the **shape** as the takeaway, not the absolute numbers, which are
-hardware-dependent:
+hardware-dependent. `req/s @ c=1` is single-client throughput (where connection
+setup matters most); `@ c=16` is under 16 concurrent clients:
 
-| Scenario            | req/s @ c=1 | req/s @ c=16 | p50 @ c=16 | p99 @ c=16 |
-| ------------------- | ----------: | -----------: | ---------: | ---------: |
-| `GET /` (no DB)     |      ~9,500 |      ~27,000 |    0.4 ms  |    0.9 ms  |
-| `GET /users` (list) |      ~5,800 |      ~14,300 |    1.1 ms  |    1.6 ms  |
-| `GET /users/1`      |      ~7,500 |      ~18,600 |    0.6 ms  |    1.8 ms  |
-| `POST /users`       |      ~6,600 |      ~14,600 |    0.7 ms  |   22 ms    |
+| Scenario            | per-request @ c=1 | keep-alive @ c=1 | per-request @ c=16 | keep-alive @ c=16 |
+| ------------------- | ----------------: | ---------------: | -----------------: | ----------------: |
+| `GET /` (no DB)     |            ~9,900 |          ~24,000 |            ~16,700 |           ~40,000 |
+| `GET /users` (list) |            ~6,700 |          ~10,600 |            ~14,500 |           ~13,700 |
+| `GET /users/1`      |            ~8,100 |          ~19,500 |            ~15,200 |           ~23,700 |
+| `POST /users`       |            ~6,400 |          ~12,300 |            ~14,300 |           ~15,200 |
 
 What this says about "fast":
 
@@ -134,20 +136,28 @@ What this says about "fast":
   median latency. SQLite reads come from the OS page cache, so an
   application-level response cache would optimize a path that is already fast and
   would add cache-invalidation and cross-thread-locking risk for no real gain.
-- **Writes are now fast too.** The database opens in **WAL mode with
+- **Writes are fast too.** The database opens in **WAL mode with
   `synchronous=NORMAL`** ([`open_database()`](src/database.c)), so the writer
   fsyncs at checkpoints instead of once per transaction. That took `POST /users`
-  from **~170 req/s (p50 ~100 ms at c=16) to ~14,600 req/s (p50 ~0.7 ms)** — a
-  ~40–90× improvement — and writes now scale with concurrency instead of
-  serializing behind one `fsync` per insert.
+  from ~170 req/s (p50 ~100 ms at c=16) to the numbers above — a ~40–90×
+  improvement over the previous `synchronous=FULL` default — and writes now scale
+  with concurrency instead of serializing behind one `fsync` per insert.
   - *Durability trade-off:* under `synchronous=NORMAL`, an application crash is
     still safe; only an OS/power crash can lose the last few committed
-    transactions. If you need strict durability, set `synchronous=FULL` (and
-    give back most of the write speedup).
-- Remaining lever: **HTTP keep-alive** would remove the per-request TCP
-  connection setup and lift every endpoint further, but connection setup is
-  already sub-millisecond here, so it is a smaller, higher-risk change — not
-  implemented.
+    transactions. Set `synchronous=FULL` for strict durability (giving back most
+    of the write speedup).
+- **HTTP/1.1 keep-alive** ([`send_data()`](src/server.c)) reuses a connection for
+  many requests, removing per-request TCP setup. The win is largest for
+  single/low-concurrency clients and cheap endpoints (`GET /` ~2.4×, `GET
+  /users/1` ~2.4× at c=1); at higher concurrency the 8-worker pool and the DB
+  become the ceiling, so the gain shrinks.
+  - *Trade-off:* this is a **blocking** thread pool, so a kept-alive connection
+    pins a worker for its lifetime. With only 8 workers, that limits the number
+    of simultaneously *active* persistent connections. Two guards bound the
+    damage: a per-connection request cap (`MAX_KEEPALIVE_REQUESTS`, after which
+    the server sends `Connection: close`) and the `SO_RCVTIMEO` idle timeout that
+    drops a quiet connection. Real scale-out for many persistent clients would
+    need event-driven I/O (epoll), which this server does not use.
 
 ## Project layout
 

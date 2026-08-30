@@ -133,38 +133,61 @@ static void route_request(int fd, const char *method, const char *target, const 
 // Per-connection worker entry point
 // ---------------------------------------------------------------------------
 
+// Cap on requests served over a single kept-alive connection. Bounds how long
+// one client can hold a worker (a persistent connection pins a worker in this
+// blocking pool); an idle connection is also dropped by SO_RCVTIMEO.
+#define MAX_KEEPALIVE_REQUESTS 100
+
 void send_data(void *client_socket)
 {
     int fd = *(int *)client_socket;
-    char buf[BUFFER_SIZE] = {0};
+    free(client_socket); // the fd is owned by this function from here on
 
-    ssize_t n = recv_request(fd, buf, sizeof(buf));
-    if (n <= 0)
+    char buf[BUFFER_SIZE];
+    size_t len = 0; // bytes currently buffered; may span multiple requests
+    int served = 0;
+
+    for (;;)
     {
-        close(fd);
-        free(client_socket);
-        return;
+        ssize_t req_len = recv_request(fd, buf, sizeof(buf), &len);
+        if (req_len <= 0)
+            break; // clean close, error, idle timeout, or oversized request
+
+        // Isolate this one request from any pipelined bytes while parsing it.
+        char saved = buf[req_len];
+        buf[req_len] = '\0';
+
+        char method[16];
+        char target[2048];
+        int ok = parse_request_line(buf, method, sizeof(method), target, sizeof(target));
+
+        // Keep the connection alive only if the client wants it, the request
+        // parsed, and we are under the per-connection cap; otherwise close.
+        int keep_alive = ok && request_keep_alive(buf) && (served + 1 < MAX_KEEPALIVE_REQUESTS);
+        response_set_connection_close(!keep_alive);
+
+        if (!ok)
+        {
+            send_error(fd, "400 Bad Request", "<html><h1>400 Bad Request</h1></html>");
+            break; // a malformed request desynchronizes the stream: stop
+        }
+
+        char *body = find_body(buf);
+        response_log_prefix();
+        printf("%s %s\n", method, target);
+        route_request(fd, method, target, body);
+
+        // Consume this request and shift any pipelined bytes to the front.
+        buf[req_len] = saved;
+        memmove(buf, buf + req_len, len - (size_t)req_len);
+        len -= (size_t)req_len;
+        served++;
+
+        if (!keep_alive)
+            break;
     }
-
-    char method[16];
-    char target[2048];
-    if (!parse_request_line(buf, method, sizeof(method), target, sizeof(target)))
-    {
-        send_error(fd, "400 Bad Request", "<html><h1>400 Bad Request</h1></html>");
-        close(fd);
-        free(client_socket);
-        return;
-    }
-
-    char *body = find_body(buf);
-
-    response_log_prefix();
-    printf("%s %s\n", method, target);
-
-    route_request(fd, method, target, body);
 
     close(fd);
-    free(client_socket);
 }
 
 // ---------------------------------------------------------------------------
