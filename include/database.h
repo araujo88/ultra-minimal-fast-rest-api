@@ -9,16 +9,16 @@
 #define SQL_QUERY_SIZE 1024
 
 void create_table();
-void get_entries(char *buffer);
-void get_entry(unsigned int id, char *buffer);
-void create_entry(char struct_string[NUM_COLS][STR_LEN], char *buffer);
-void update_entry(unsigned int id, char struct_string[NUM_COLS][STR_LEN], char *buffer);
-void delete_entry(unsigned int id, char *buffer);
+int get_entries(char *buffer, size_t cap);
+int get_entry(unsigned int id, char *buffer, size_t cap);
+void create_entry(char struct_string[NUM_COLS][STR_LEN], char *buffer, size_t cap);
+void update_entry(unsigned int id, char struct_string[NUM_COLS][STR_LEN], char *buffer, size_t cap);
+void delete_entry(unsigned int id, char *buffer, size_t cap);
 void open_database();
 void close_database();
-void check_connection();
+void check_connection(int rc);
 void check_version();
-void check_sql(char *buffer);
+void check_sql(int rc, char *err, char *buffer, size_t cap);
 int callback(void *buffer, int argc, char *argv[], char *azColName[]);
 
 #endif

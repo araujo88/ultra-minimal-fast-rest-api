@@ -17,13 +17,11 @@
 
 #define BUFFER_SIZE 8192
 
-void check_socket(int server_socket);                                                      // check socket creation
-void check_bind(int server_socket, struct sockaddr_in *server_address);                    // check binding
-void check_listen(int server_socket, int number_connections);                              // check connection listening
-void check_accept(int server_socket, int *client_socket, struct sockaddr *client_address); // check accepting connection
-void *send_data(void *client_socket);                                                      // sends data
-void get_request(int client_socket, char *request, char *content);                         // displays client request
-void create_server(int server_socket, char *ip, int port, int max_connections, thread_pool_t *pool);
-bool check_client_ip(int *client_socket, struct sockaddr *client_address);
+// Set to 0 by the SIGINT handler; the accept loop notices this and shuts down
+// cleanly from normal thread context (no work is done in the signal handler).
+extern volatile sig_atomic_t server_running;
+
+void send_data(void *client_socket);
+void create_server(char *ip, int port, int max_connections, thread_pool_t *pool);
 
 #endif
