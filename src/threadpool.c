@@ -1,7 +1,17 @@
 #include "../include/threadpool.h"
 #include <pthread.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <unistd.h>
+#include <limits.h>
+
+// Each worker's peak stack use is a handful of fixed buffers (a request buffer,
+// a response buffer, a small SQL buffer) plus normal frames -- well under
+// 64 KB. The default pthread stack is ~8 MB of *virtual* address space per
+// thread, which makes a high --threads count needlessly expensive; a small
+// stack lets the thread-per-connection pool scale to thousands of workers. Kept
+// generously above the real peak (and above PTHREAD_STACK_MIN).
+#define WORKER_STACK_SIZE (512 * 1024)
 
 // Queue methods.
 //
@@ -86,10 +96,36 @@ thread_pool_t *thread_pool_create(int num_threads, int queue_size)
     queue_init(&pool->queue, queue_size);
     pool->shutdown = 0;     // Not shutting down yet
     pool->active_tasks = 0; // No outstanding work yet
+
+    // Give workers a small stack so a large --threads count stays cheap.
+    pthread_attr_t attr;
+    pthread_attr_init(&attr);
+    size_t stack = WORKER_STACK_SIZE;
+    if (stack < (size_t)PTHREAD_STACK_MIN)
+        stack = (size_t)PTHREAD_STACK_MIN;
+    pthread_attr_setstacksize(&attr, stack);
+
+    // Create as many workers as the OS allows; if pthread_create fails partway
+    // (e.g. RLIMIT_NPROC at a very high --threads), run with what we got rather
+    // than leaving uninitialized pthread_t entries that cleanup would join.
+    int created = 0;
     for (int i = 0; i < num_threads; i++)
     {
-        pthread_create(&pool->threads[i], NULL, thread_pool_worker, (void *)pool);
+        if (pthread_create(&pool->threads[i], &attr, thread_pool_worker, (void *)pool) != 0)
+            break;
+        created++;
     }
+    pthread_attr_destroy(&attr);
+    if (created == 0)
+    {
+        // No workers means the acceptor would enqueue and then block forever
+        // once the queue fills -- a pool that can never drain. Fail fast.
+        fprintf(stderr, "thread pool: could not create any of %d workers\n", num_threads);
+        exit(EXIT_FAILURE);
+    }
+    if (created < num_threads)
+        fprintf(stderr, "thread pool: requested %d workers, started %d\n", num_threads, created);
+    pool->num_threads = created; // cleanup joins exactly the threads we created
     return pool;
 }
 

@@ -57,7 +57,7 @@ static void usage(const char *prog)
             "Usage: %s [options]\n"
             "  -H, --host ADDR       bind address (default 0.0.0.0)\n"
             "  -p, --port PORT       listen port 1-65535 (default 9002)\n"
-            "  -t, --threads N       worker threads 1-1024 (default 8)\n"
+            "  -t, --threads N       worker threads 1-65535 (default 8)\n"
             "  -b, --backlog N       listen backlog 1-65535 (default 10)\n"
             "  -v, --version         print version and exit\n"
             "  -h, --help            show this help and exit\n"
@@ -77,7 +77,7 @@ int main(int argc, char **argv)
         host = "0.0.0.0";
     int port = 9002, threads = 8, backlog = 10;
     env_int("PORT", 1, 65535, &port);
-    env_int("THREADS", 1, 1024, &threads);
+    env_int("THREADS", 1, 65535, &threads);
     env_int("BACKLOG", 1, 65535, &backlog);
 
     static const struct option opts[] = {
@@ -107,7 +107,7 @@ int main(int argc, char **argv)
             }
             break;
         case 't':
-            if (!parse_int(optarg, 1, 1024, &threads))
+            if (!parse_int(optarg, 1, 65535, &threads))
             {
                 fprintf(stderr, "Invalid --threads \"%s\"\n", optarg);
                 return EXIT_FAILURE;
