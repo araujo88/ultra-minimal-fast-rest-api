@@ -122,6 +122,34 @@ a blocking `recv()` pins a kernel thread for the connection's lifetime, and the
 connection holds a worker. Small stacks make thread-per-connection scale
 *further*, not *free*.
 
+## 6. Compiler optimization: `-O0` vs `-O2`
+
+The build compiles at `-O2` (kept debuggable with `-g`; override with
+`make OPT=-O0`). To isolate the flag, both binaries were built from the same
+commit and run **interleaved** on the same machine.
+
+End-to-end on shared CPUs (the Python load generator and the server competing
+for the 16 vCPUs), the difference was **within run-to-run noise** — ±30–50%
+swings dwarfed any flag effect. That is expected: the client and the `recv`/
+`send` syscalls dominate, and the server's own compute is a small slice of each
+request.
+
+Pinning the server to a **single core** (so server CPU is the actual bottleneck)
+separates the two kinds of endpoint:
+
+| Scenario (c=6, keep-alive, server pinned to 1 core) | `-O0` req/s | `-O2` req/s |    delta |
+| --------------------------------------------------- | ----------: | ----------: | -------: |
+| `GET /livez` (no DB — pure parse/route/response)     |    ~46,900  |    ~47,800  | ~0% (noise) |
+| `GET /users/1` (SQLite read + JSON build)            |    ~27,600  |    ~30,500  |    ~+10% |
+
+*(medians of 5 interleaved rounds; WSL2, 16 vCPU; hardware-dependent)*
+
+**Takeaway:** `-O2` helps only where there is real compute — the read +
+JSON-escaping path gains ~10% when the server core is saturated. The pure-I/O
+path (`livez`) is syscall-bound and unchanged. In normal operation (server not
+CPU-pinned) even the `get_one` gain disappears into noise. So `-O2` is a genuine
+but **modest and situational** win — free to keep, not a headline number.
+
 ## What we did not do (and why)
 
 - **A response cache** — reads are already tens of thousands/sec from the OS page
@@ -141,7 +169,9 @@ connection holds a worker. Small stacks make thread-per-connection scale
 2. **HTTP keep-alive** — done; removes per-request connection setup.
 3. **Small worker stacks** — done; lets `--threads` scale to thousands cheaply.
 4. **`-O2` builds + `TCP_NODELAY`** — done; cheap CPU/latency wins. The workload
-   is largely syscall/DB-bound, so the effect is modest.
+   is largely syscall/DB-bound, so the effect is modest and situational (see §6:
+   ~10% on the compute-heavy read path when the server core is saturated, within
+   noise otherwise).
 5. **Cached write prepared statements** — done; the write paths compile their
    statement once and reuse it instead of prepare/finalize per request, saving
    that CPU under `db_write_lock`. Reads stay lock-free and uncached (a shared
