@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation
+    url: https://github.com/leo-aa88/ultra-minimal-fast-rest-api/blob/main/README.md
+    about: Quick start, endpoints, defining your model, and configuration.
+  - name: Architecture & invariants
+    url: https://github.com/leo-aa88/ultra-minimal-fast-rest-api/blob/main/AGENTS.md
+    about: Request path, module responsibilities, and the invariants that must not regress.
+  - name: Security vulnerability
+    url: https://github.com/leo-aa88/ultra-minimal-fast-rest-api/security/advisories/new
+    about: Report privately via a GitHub security advisory — never in a public issue.

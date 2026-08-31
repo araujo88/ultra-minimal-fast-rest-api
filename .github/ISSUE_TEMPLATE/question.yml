@@ -1,0 +1,50 @@
+name: Question
+description: Ask how to do something with this server
+title: "[question] "
+labels:
+  - question
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Questions are welcome. If the answer turns out to be missing from the
+        docs, that's a docs bug and we'll treat it as one.
+
+  - type: textarea
+    id: goal
+    attributes:
+      label: What are you trying to do?
+      description: The end goal, not just the step you're stuck on.
+      placeholder: >-
+        I want to add a `phone` column to my model and have it show up in the
+        JSON for GET /users, without hand-writing SQL.
+    validations:
+      required: true
+
+  - type: textarea
+    id: tried
+    attributes:
+      label: What have you tried?
+      description: Commands, code, config, and what happened.
+      render: text
+
+  - type: checkboxes
+    id: docs
+    attributes:
+      label: Which docs have you already read?
+      description: So nobody sends you back to a page you've seen.
+      options:
+        - label: "[README](../blob/main/README.md)"
+        - label: "[README — Defining your model](../blob/main/README.md#defining-your-model)"
+        - label: "[README — Configuration](../blob/main/README.md#configuration)"
+        - label: "[AGENTS.md](../blob/main/AGENTS.md) (architecture and invariants)"
+        - label: "[SECURITY.md](../blob/main/SECURITY.md) (threat model / intended use)"
+        - label: "[AUDIT.md](../blob/main/AUDIT.md) (security review background)"
+        - label: "[CONTRIBUTING.md](../blob/main/CONTRIBUTING.md)"
+
+  - type: input
+    id: version
+    attributes:
+      label: Version / commit
+      description: "Output of `./server --version`, or the commit SHA."
+      placeholder: e3c82d3
