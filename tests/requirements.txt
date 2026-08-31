@@ -4,7 +4,6 @@
 # had advisories (urllib3, certifi, idna) are floored explicitly below.
 pytest>=9.1.1
 requests>=2.34.2
-faker>=40.37.0
 
 # Security floors for requests' transitive dependencies.
 urllib3>=2.7.0
