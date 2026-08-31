@@ -116,6 +116,13 @@ thread_pool_t *thread_pool_create(int num_threads, int queue_size)
         created++;
     }
     pthread_attr_destroy(&attr);
+    if (created == 0)
+    {
+        // No workers means the acceptor would enqueue and then block forever
+        // once the queue fills -- a pool that can never drain. Fail fast.
+        fprintf(stderr, "thread pool: could not create any of %d workers\n", num_threads);
+        exit(EXIT_FAILURE);
+    }
     if (created < num_threads)
         fprintf(stderr, "thread pool: requested %d workers, started %d\n", num_threads, created);
     pool->num_threads = created; // cleanup joins exactly the threads we created
