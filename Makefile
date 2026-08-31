@@ -4,7 +4,13 @@ CC=gcc
 # passes the tag, e.g. `make VERSION=v1.2.3`; local builds default to "dev".
 VERSION ?= dev
 
-CC_FLAGS=-g -Wall -Wextra -Wpedantic -DUMFRA_VERSION='"$(VERSION)"'
+# Optimization level. Default -O2 for release/normal builds (free CPU on the
+# parse/route/JSON paths); -g is kept so the optimized binary stays debuggable.
+# Override for a pure debug build, e.g. `make OPT=-O0`. The asan/http-test
+# targets append -O1 (via SAN_FLAGS), and the last -O on the line wins.
+OPT ?= -O2
+
+CC_FLAGS=-g $(OPT) -Wall -Wextra -Wpedantic -DUMFRA_VERSION='"$(VERSION)"'
 CC_LIBS=-lpthread -lsqlite3
 
 # Sanitizer flags for the `asan` target (AddressSanitizer + UBSan).
