@@ -84,7 +84,9 @@ class TestCrud:
                       data={"name": "A", "surname": "B", "age": 1, "height": 1.0},
                       timeout=TIMEOUT)
         r = requests.delete(f"{server}users/1", timeout=TIMEOUT)
-        assert r.status_code == 200
+        assert r.status_code == 204          # No Content
+        assert r.content == b""              # 204 carries no body
+        assert "Content-Length" not in r.headers  # ... and no Content-Length
         assert get_list(server) == []
         # The resource is gone now -> 404.
         assert requests.get(f"{server}users/1", timeout=TIMEOUT).status_code == 404
@@ -424,6 +426,28 @@ class TestKeepAlive:
         assert r["age"] == 5
         # height stays a JSON number 1.5; body-bleed would make it a string.
         assert isinstance(r["height"], (int, float)) and abs(r["height"] - 1.5) < 1e-9
+
+    def test_204_delete_preserves_keep_alive(self, server):
+        # A 204 has no Content-Length; it must stay self-delimiting so the next
+        # pipelined request on the same connection is still framed correctly.
+        requests.post(f"{server}users",
+                      data={"name": "A", "surname": "B", "age": 1, "height": 1.0},
+                      timeout=TIMEOUT)
+        s = socket.create_connection((HOST, PORT), timeout=TIMEOUT)
+        s.settimeout(TIMEOUT)
+        data = b""
+        try:
+            s.sendall(b"DELETE /users/1 HTTP/1.1\r\nHost: x\r\n\r\n"
+                      b"GET / HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")
+            while True:
+                d = s.recv(4096)
+                if not d:
+                    break
+                data += d
+        finally:
+            s.close()
+        assert b"204 No Content" in data
+        assert b"200 OK" in data  # following request served on the same connection
 
     def test_connection_close_is_honored(self, server):
         s = socket.create_connection((HOST, PORT), timeout=TIMEOUT)

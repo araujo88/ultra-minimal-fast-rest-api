@@ -18,6 +18,11 @@ void response_send(int fd, const char *status, const char *content_type, const c
 // given realm. Honors the per-worker Connection disposition like response_send.
 void response_send_unauthorized(int fd, const char *realm);
 
+// Send a 204 No Content response (no body). Per RFC 7230 a 204 carries no
+// Content-Length; it is self-delimiting, so keep-alive still works. Honors the
+// per-worker Connection disposition.
+void response_send_no_content(int fd);
+
 // Print the "[<date>] - " log prefix (thread-safe timestamp).
 void response_log_prefix(void);
 

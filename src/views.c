@@ -64,9 +64,8 @@ void get_user_view(void *client_socket, unsigned int id)
 void delete_user_view(void *client_socket, unsigned int id)
 {
     int fd = *(int *)client_socket;
-    char content[BUFFER_SIZE / 2] = "";
 
-    int rc = delete_entry(id, content, sizeof(content));
+    int rc = delete_entry(id, NULL, 0); // 204 on success carries no body
     if (rc == DB_NOT_FOUND)
     {
         log_status(RED, "404 Not Found");
@@ -80,8 +79,8 @@ void delete_user_view(void *client_socket, unsigned int id)
         return;
     }
 
-    log_status(GREEN, "200 OK");
-    response_send(fd, "200 OK", "application/json", content);
+    log_status(GREEN, "204 No Content");
+    response_send_no_content(fd);
 }
 
 void update_user_view(void *client_socket, unsigned int id, char struct_string[NUM_COLS][STR_LEN])

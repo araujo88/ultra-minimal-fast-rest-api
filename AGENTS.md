@@ -66,7 +66,7 @@ Module responsibilities:
   Content-Type + Content-Length + body), `response_send_all`,
   `response_log_prefix`. The one place responses are built.
 - `views.c` — per-endpoint handlers; translate `DB_OK` / `DB_NOT_FOUND` /
-  `DB_ERROR` into `200`/`201` / `404` / `500`.
+  `DB_ERROR` into `200`/`201`/`204` / `404` / `500` (DELETE success is `204`).
 - `database.c` — SQLite CRUD via prepared statements + the bounded JSON string
   builder. Owns the DB write lock.
 - `threadpool.c` — one mutex, a bounded ring-buffer queue with backpressure,
