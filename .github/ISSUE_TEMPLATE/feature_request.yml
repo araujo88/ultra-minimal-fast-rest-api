@@ -1,0 +1,100 @@
+name: Feature request
+description: Propose a capability, endpoint, flag, or API addition
+title: "[feature] "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This project is a deliberately **minimal, mock / local-development**
+        CRUD server (see [AGENTS.md](../blob/main/AGENTS.md) "What this is" and
+        [SECURITY.md](../blob/main/SECURITY.md) for the threat model). Some
+        omissions are intentional, and the security review established
+        [invariants](../blob/main/AGENTS.md#invariants-do-not-regress-these)
+        that must not regress.
+
+        Proposals that would weaken an invariant, or pull the project toward
+        untrusted public exposure, need to argue the trade-off — not just
+        restate the feature.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: >-
+        What are you trying to do that the server makes hard or impossible
+        today? Describe the situation, not the solution.
+      placeholder: >-
+        I want list endpoints to support pagination, but GET on a collection
+        always returns every row.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed surface
+      description: >-
+        What would the endpoint, flag, env var, or `models.h` declaration look
+        like? Concrete request/response shapes and command lines beat prose.
+      placeholder: |
+        GET /users?limit=20&offset=40
+
+        // or a new config knob:
+        ./server --max-body-size 65536
+      render: text
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where do you think this belongs?
+      description: A guess is fine — maintainers will re-bucket.
+      options:
+        - HTTP parsing / framing (http.c)
+        - routing (server.c)
+        - views / endpoints (views.c)
+        - database / SQLite / JSON (database.c)
+        - response construction (response.c)
+        - thread pool / concurrency (threadpool.c)
+        - config / CLI / env (main.c)
+        - auth / allowlist
+        - model declaration (include/models.h)
+        - build / CI / Docker
+        - docs
+        - not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: invariants
+    attributes:
+      label: Impact on the invariants
+      description: >-
+        Does this touch any of the AGENTS.md invariants (framing, parameterized
+        SQL, bounded JSON, serialized writers, bounded pool, signal-safe
+        shutdown, request-local failure, bounded buffers)? If so, how do you
+        keep them intact?
+      placeholder: >-
+        Pagination stays parameterized (limit/offset bound via sqlite3_bind_*)
+        and the JSON build remains length-checked, so no invariant changes.
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and workarounds
+      description: >-
+        What are you doing today instead? Could this live in front of the server
+        (reverse proxy, wrapper script) rather than in it?
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues for a similar request
+          required: true
+        - label: This fits the project's "minimal / local-dev" scope in AGENTS.md and SECURITY.md
+          required: false

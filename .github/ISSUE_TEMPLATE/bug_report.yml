@@ -1,0 +1,130 @@
+name: Bug report
+description: The server, parser, CLI flags, or a CRUD endpoint behaves incorrectly
+title: "[bug] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Please fill in enough for someone to reproduce
+        this without guessing.
+
+        **Found a security vulnerability?** Do not open an issue — see
+        [SECURITY.md](../blob/main/SECURITY.md) for private reporting.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened
+      description: What did you observe, and what did you expect instead?
+      placeholder: |
+        POST /users with a valid form returns 201, but a subsequent GET /users
+        returns an empty list. I expected the created row to be listed.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: >-
+        Exact commands from a clean checkout. Prefer raw `curl` (or the exact
+        request bytes) so we can paste it into a shell — a reproduction we can
+        run gets fixed much faster.
+      placeholder: |
+        1. make && ./server --host 127.0.0.1 --port 9002
+        2. curl -i -X POST 127.0.0.1:9002/users -d 'name=alice&email=a@b.c&age=30'
+        3. curl -i 127.0.0.1:9002/users   # returns []
+      render: shell
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version / commit
+      description: "Output of `./server --version`, or the commit SHA if built from a checkout."
+      placeholder: e3c82d3
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: >-
+        OS / distro and version, compiler (`gcc --version`), and libsqlite3
+        version. Note if you're running under Docker, WSL, or valgrind.
+      render: text
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Where does the problem appear?
+      multiple: true
+      options:
+        - HTTP parsing / framing (http.c)
+        - routing (server.c)
+        - views / status codes (views.c)
+        - database / SQLite / JSON build (database.c)
+        - response construction (response.c)
+        - thread pool / concurrency (threadpool.c)
+        - config / CLI flags / env vars (main.c)
+        - auth (BASIC_AUTH)
+        - allowlist (ALLOWED_HOSTS)
+        - model declaration (include/models.h)
+        - build / Makefile / CI
+        - Docker
+    validations:
+      required: true
+
+  - type: dropdown
+    id: auth
+    attributes:
+      label: Auth mode
+      description: "`BASIC_AUTH` state when reproducing, if relevant."
+      options:
+        - unset (no auth, default)
+        - "BASIC_AUTH set (user:password)"
+        - not auth related
+    validations:
+      required: true
+
+  - type: dropdown
+    id: concurrency
+    attributes:
+      label: Concurrency
+      description: Does it reproduce single-threaded, or only under load?
+      options:
+        - single request / single thread
+        - only under concurrent clients / keep-alive
+        - not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or output
+      description: >-
+        Relevant server stderr, full request/response bytes (`curl -i` or `-v`),
+        stack traces, or ASan/UBSan/valgrind output.
+      render: text
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues for a duplicate
+          required: true
+        - label: This reproduces on the latest release or on `main`
+          required: false
+        - label: >-
+            I confirmed it is not one of the documented out-of-scope items in
+            SECURITY.md (e.g. TLS, public-internet exposure)
+          required: false
