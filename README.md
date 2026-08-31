@@ -71,7 +71,7 @@ For the example `users` model:
 | `POST /users`        | `201` JSON        | body is `application/x-www-form-urlencoded` |
 | `GET /users/<id>`    | `200` JSON object | `404` if not found, `400` if `<id>` is non-numeric |
 | `PUT /users/<id>`    | `200` JSON        | `404` if not found, `400` if `<id>` is non-numeric |
-| `DELETE /users/<id>` | `200` JSON        | `404` if not found, `400` if `<id>` is non-numeric |
+| `DELETE /users/<id>` | `204` No Content  | `404` if not found, `400` if `<id>` is non-numeric |
 
 Unknown routes return `404`; unsupported methods on a known path return `405`;
 database/serialization failures return `500`.

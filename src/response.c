@@ -70,6 +70,22 @@ void response_send(int fd, const char *status, const char *content_type, const c
     response_send_all(fd, msg, (size_t)n);
 }
 
+void response_send_no_content(int fd)
+{
+    char date[32];
+    now_str(date, sizeof(date));
+    const char *conn = g_conn_close ? "close" : "keep-alive";
+
+    // No Content-Length and no body: a 204 is self-delimiting (RFC 7230).
+    char msg[128];
+    int n = snprintf(msg, sizeof(msg),
+                     "HTTP/1.1 204 No Content\r\nDate: %s\r\nConnection: %s\r\n\r\n",
+                     date, conn);
+    if (n < 0 || (size_t)n >= sizeof(msg))
+        return;
+    response_send_all(fd, msg, (size_t)n);
+}
+
 void response_send_unauthorized(int fd, const char *realm)
 {
     char date[32];
