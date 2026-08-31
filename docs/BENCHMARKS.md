@@ -140,10 +140,14 @@ connection holds a worker. Small stacks make thread-per-connection scale
 1. **WAL + `synchronous=NORMAL`** — done; the big write win.
 2. **HTTP keep-alive** — done; removes per-request connection setup.
 3. **Small worker stacks** — done; lets `--threads` scale to thousands cheaply.
-4. **Per-thread SQLite read connections** (WAL allows concurrent readers) — would
+4. **`-O2` builds + `TCP_NODELAY`** — done; cheap CPU/latency wins. The workload
+   is largely syscall/DB-bound, so the effect is modest.
+5. **Cached write prepared statements** — done; the write paths compile their
+   statement once and reuse it instead of prepare/finalize per request, saving
+   that CPU under `db_write_lock`. Reads stay lock-free and uncached (a shared
+   statement can't be stepped by two reader threads at once).
+6. **Per-thread SQLite read connections** (WAL allows concurrent readers) — would
    parallelize reads instead of serializing on the one shared connection. Not
    done; the highest-value remaining read change if read concurrency matters.
-5. **`-O2` release builds + `TCP_NODELAY`** — cheap CPU/latency wins; the
-   workload is largely syscall/DB-bound, so the effect is modest.
-6. **epoll event loop** — the ceiling-buster for many concurrent connections;
+7. **epoll event loop** — the ceiling-buster for many concurrent connections;
    biggest effort, out of scope for this project.
