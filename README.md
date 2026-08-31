@@ -158,51 +158,22 @@ PORT=8080 THREADS=16 ./server        # equivalent via env
 
 ## Performance
 
-Reproduce with `make bench` (builds nothing extra; drives the running server
-with `bench/bench.py`, a dependency-free client). It runs two connection models:
-one TCP connection per request, and HTTP/1.1 **keep-alive** (one connection
-reused for many requests).
+Reproduce with `make bench`. Highlights (dev machine, indicative — treat the
+shape, not the absolute numbers, as the takeaway):
 
-Indicative results on the development machine (WSL2, 16 vCPU), 3s per cell —
-treat the **shape** as the takeaway, not the absolute numbers, which are
-hardware-dependent. `req/s @ c=1` is single-client throughput (where connection
-setup matters most); `@ c=16` is under 16 concurrent clients:
+- **Reads** are fast — tens of thousands of req/s at sub-millisecond median.
+- **Writes** run at ~12–15k req/s thanks to **WAL + `synchronous=NORMAL`**
+  ([`open_database()`](src/database.c)) — a ~40–90× jump over the previous
+  `synchronous=FULL` default. (Trade-off: only an OS/power crash can lose the
+  last few transactions; set `synchronous=FULL` for strict durability.)
+- **HTTP/1.1 keep-alive** removes per-request connection setup (~2.4× at low
+  concurrency on cheap endpoints).
+- **Small worker stacks** let `--threads` scale to thousands cheaply
+  (10,000 workers ≈ 5 GB virtual / 45 MB resident).
 
-| Scenario            | per-request @ c=1 | keep-alive @ c=1 | per-request @ c=16 | keep-alive @ c=16 |
-| ------------------- | ----------------: | ---------------: | -----------------: | ----------------: |
-| `GET /livez` (no DB)|            ~9,900 |          ~24,000 |            ~16,700 |           ~40,000 |
-| `GET /users` (list) |            ~6,700 |          ~10,600 |            ~14,500 |           ~13,700 |
-| `GET /users/1`      |            ~8,100 |          ~19,500 |            ~15,200 |           ~23,700 |
-| `POST /users`       |            ~6,400 |          ~12,300 |            ~14,300 |           ~15,200 |
-
-What this says about "fast":
-
-- **Reads are fast** — tens of thousands of requests/sec at sub-millisecond
-  median latency. SQLite reads come from the OS page cache, so an
-  application-level response cache would optimize a path that is already fast and
-  would add cache-invalidation and cross-thread-locking risk for no real gain.
-- **Writes are fast too.** The database opens in **WAL mode with
-  `synchronous=NORMAL`** ([`open_database()`](src/database.c)), so the writer
-  fsyncs at checkpoints instead of once per transaction. That took `POST /users`
-  from ~170 req/s (p50 ~100 ms at c=16) to the numbers above — a ~40–90×
-  improvement over the previous `synchronous=FULL` default — and writes now scale
-  with concurrency instead of serializing behind one `fsync` per insert.
-  - *Durability trade-off:* under `synchronous=NORMAL`, an application crash is
-    still safe; only an OS/power crash can lose the last few committed
-    transactions. Set `synchronous=FULL` for strict durability (giving back most
-    of the write speedup).
-- **HTTP/1.1 keep-alive** ([`send_data()`](src/server.c)) reuses a connection for
-  many requests, removing per-request TCP setup. The win is largest for
-  single/low-concurrency clients and cheap endpoints (`GET /livez` ~2.4×, `GET
-  /users/1` ~2.4× at c=1); at higher concurrency the 8-worker pool and the DB
-  become the ceiling, so the gain shrinks.
-  - *Trade-off:* this is a **blocking** thread pool, so a kept-alive connection
-    pins a worker for its lifetime. With only 8 workers, that limits the number
-    of simultaneously *active* persistent connections. Two guards bound the
-    damage: a per-connection request cap (`MAX_KEEPALIVE_REQUESTS`, after which
-    the server sends `Connection: close`) and the `SO_RCVTIMEO` idle timeout that
-    drops a quiet connection. Real scale-out for many persistent clients would
-    need event-driven I/O (epoll), which this server does not use.
+Full methodology, result tables, the thread/memory scaling numbers, and an
+honest discussion of the ceilings (single SQLite writer; blocking
+thread-per-connection vs epoll) are in **[docs/BENCHMARKS.md](docs/BENCHMARKS.md)**.
 
 ## Project layout
 

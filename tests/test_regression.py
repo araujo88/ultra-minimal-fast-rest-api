@@ -248,6 +248,12 @@ class TestConfig:
         server_manager(env={"THREADS": "2"})  # non-default worker count still serves
         assert requests.get(f"http://{HOST}:{PORT}/livez", timeout=TIMEOUT).status_code == 200
 
+    def test_high_thread_count_scales(self, server_manager):
+        # Small worker stacks let --threads reach the thousands without
+        # exhausting address space; the server must still start and serve.
+        server_manager(args=["--threads", "2000"])
+        assert requests.get(f"http://{HOST}:{PORT}/livez", timeout=TIMEOUT).status_code == 200
+
     def test_invalid_port_flag_exits_nonzero(self):
         r = subprocess.run([SERVER_BIN, "--port", "70000"], cwd=REPO_ROOT,
                            capture_output=True, text=True, timeout=10)

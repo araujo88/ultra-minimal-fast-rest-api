@@ -1,0 +1,128 @@
+# Benchmarks
+
+Performance measurements for ultra-minimal-fast-rest-api, how to reproduce them,
+and what they mean. **Absolute numbers are hardware-dependent — treat the
+*shape* and *ratios* as the takeaway, not the exact figures.** All numbers below
+were taken on the development machine (WSL2, 16 vCPU) and will differ on yours.
+
+## Reproducing
+
+```bash
+make bench          # builds nothing extra; drives the running server
+```
+
+`make bench` (via `bench/run_bench.sh`) starts the server, seeds ~40 rows, and
+runs `bench/bench.py` — a dependency-free load generator — over two connection
+models and a sweep of concurrency levels. The client frames responses by
+`Content-Length` (not by connection close), so it is correct with and without
+keep-alive.
+
+Scenarios: `livez` (`GET /livez`, no DB), `list` (`GET /users`), `get_one`
+(`GET /users/1`), `create` (`POST /users`). Concurrency `c` = number of
+concurrent client connections (one worker process each).
+
+## 1. Connection model: per-request vs keep-alive
+
+The server closed the connection after each response until HTTP/1.1 keep-alive
+was added. Keep-alive reuses one connection for many requests, removing
+per-request TCP setup.
+
+| Scenario            | per-request @ c=1 | keep-alive @ c=1 | per-request @ c=16 | keep-alive @ c=16 |
+| ------------------- | ----------------: | ---------------: | -----------------: | ----------------: |
+| `GET /livez` (no DB)|            ~9,900 |          ~24,000 |            ~16,700 |           ~40,000 |
+| `GET /users` (list) |            ~6,700 |          ~10,600 |            ~14,500 |           ~13,700 |
+| `GET /users/1`      |            ~8,100 |          ~19,500 |            ~15,200 |           ~23,700 |
+| `POST /users`       |            ~6,400 |          ~12,300 |            ~14,300 |           ~15,200 |
+
+*(requests/sec; higher is better)*
+
+**Takeaway:** keep-alive helps most for single/low-concurrency clients and cheap
+endpoints (`GET /livez`, `GET /users/1` ≈ 2.4× at c=1), where connection setup
+is a large fraction of the work. At higher concurrency the worker pool and the
+database become the ceiling, so the gain shrinks.
+
+## 2. Write throughput: WAL
+
+Writes were the original bottleneck. With SQLite's default `synchronous=FULL`
+and a rollback journal, every `INSERT` does an `fsync`, and the writer is
+serialized by `db_write_lock`, so `POST /users` plateaued at **~170 req/s**
+regardless of concurrency (p50 ~100 ms at c=16).
+
+Opening the connection in **WAL journal mode with `synchronous=NORMAL`**
+(`open_database()`) moved that to **~12,000–15,000 req/s** — a ~40–90×
+improvement — and writes now scale with concurrency instead of serializing
+behind one fsync per insert.
+
+Trade-off: under `synchronous=NORMAL` an application crash is still safe; only an
+OS/power crash can lose the last few committed transactions. Set
+`synchronous=FULL` for strict durability (giving back most of the speedup).
+
+## 3. Thread count
+
+The pool is thread-per-connection with a bounded queue (`--threads`, default 8).
+Does adding workers help? Sweep at c=32, ~2s/cell:
+
+| `--threads` | `get_one` req/s (per-request) | `create` req/s (per-request) |
+| ----------: | ----------------------------: | ---------------------------: |
+|           8 |                       ~11,900 |                       ~9,900 |
+|          32 |                       ~12,800 |                       ~9,800 |
+|          64 |                       ~13,900 |                       ~8,900 |
+
+**Takeaway:** more threads gives only marginal read gains (~17% from 8→64,
+diminishing) and **does not help writes** (a single-file SQLite database has one
+writer; no thread count parallelizes it). Thread count is not the bottleneck at
+these concurrencies — the ceilings are the single shared SQLite connection (for
+reads) and the single writer (for writes).
+
+## 4. Thread scaling and memory (small worker stacks)
+
+Because the pool is thread-per-connection, the number of simultaneously *active*
+keep-alive connections is bounded by the worker count. Workers are given a small
+stack (`WORKER_STACK_SIZE`, 512 KB — their real peak use is a few fixed buffers,
+well under 64 KB) so a high `--threads` count stays cheap. The default pthread
+stack is ~8 MB of *virtual* address space per thread, which makes thousands of
+threads prohibitively expensive.
+
+| `--threads` | worker stack | VmPeak (virtual) | VmRSS (resident) |
+| ----------: | ------------ | ---------------: | ---------------: |
+|        1000 | 8 MB (old)   |          ~8.2 GB |          ~16 MB  |
+|        1000 | 512 KB       |          ~521 MB |          ~7.7 MB |
+|        4000 | 512 KB       |          ~2.0 GB |          ~20 MB  |
+|       10000 | 512 KB       |          ~5.0 GB |          ~45 MB  |
+
+**Takeaway:** small stacks cut virtual memory ~16× and let the pool scale to
+**10,000 workers** in ~5 GB virtual / ~45 MB resident. If `pthread_create`
+eventually fails (e.g. `RLIMIT_NPROC`), the pool runs with the workers it did
+create and logs how many, rather than crashing.
+
+This is still a **1:1 kernel-thread** model, not lightweight (Go-style) threads:
+a blocking `recv()` pins a kernel thread for the connection's lifetime, and the
+`MAX_KEEPALIVE_REQUESTS` cap + `SO_RCVTIMEO` idle timeout bound how long one
+connection holds a worker. Small stacks make thread-per-connection scale
+*further*, not *free*.
+
+## What we did not do (and why)
+
+- **A response cache** — reads are already tens of thousands/sec from the OS page
+  cache; a cache would optimize the fast path while adding invalidation and
+  cross-thread-locking risk. The write path, not read latency, was the ceiling.
+- **A lock-free / sharded writer** — a single-file SQLite database has one
+  writer by design; WAL already captured the realistic win.
+- **An epoll event loop + user-space coroutines** — this is the real lever for
+  *many thousands of concurrent connections* (decoupling connection count from
+  thread count, the nginx/Redis and Go-runtime model). It is a transport-core
+  rewrite and a large amount of complexity/dependency for a localhost mock
+  server, so it is intentionally out of scope.
+
+## Levers, ranked
+
+1. **WAL + `synchronous=NORMAL`** — done; the big write win.
+2. **HTTP keep-alive** — done; removes per-request connection setup.
+3. **Small worker stacks** — done; lets `--threads` scale to thousands cheaply.
+4. **Per-thread SQLite read connections** (WAL allows concurrent readers) — would
+   parallelize reads instead of serializing on the one shared connection. Not
+   done; the highest-value remaining read change if read concurrency matters.
+5. **`-O2` release builds + `TCP_NODELAY`** — cheap CPU/latency wins; the
+   workload is largely syscall/DB-bound, so the effect is modest.
+6. **epoll event loop** — the ceiling-buster for many concurrent connections;
+   biggest effort, out of scope for this project.

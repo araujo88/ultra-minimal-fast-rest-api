@@ -23,6 +23,7 @@ development / mock APIs**, not untrusted public exposure. Background:
 | Static analysis | `make cppcheck` |
 | Parser unit + fuzz (ASan/UBSan) | `make http-test` |
 | Valgrind memcheck (drives the server) | `make valgrind` |
+| Throughput benchmark | `make bench` (see [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md)) |
 | Regression tests | `cd tests && pip install -r requirements.txt && pytest -v` |
 | Run | `./server` (or `./run_locally.sh`) |
 | Clean | `make clean` |
@@ -70,7 +71,9 @@ Module responsibilities:
 - `database.c` — SQLite CRUD via prepared statements + the bounded JSON string
   builder. Owns the DB write lock.
 - `threadpool.c` — one mutex, a bounded ring-buffer queue with backpressure,
-  two condition variables, clean shutdown.
+  two condition variables, clean shutdown. Workers use a small stack
+  (`WORKER_STACK_SIZE`, 512 KB) so a high `--threads` count stays cheap; if
+  `pthread_create` fails partway the pool runs with the workers it created.
 - `include/models.h` — the data model. `include/settings.h` — compile-time
   defaults for the client allowlist and Basic auth (`BASIC_AUTH_DEFAULT`).
 
