@@ -499,6 +499,12 @@ void create_server(const char *ip, int port, int max_connections, thread_pool_t 
         struct timeval tv = {.tv_sec = 10, .tv_usec = 0};
         setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
+        // Disable Nagle: responses are small and self-contained, so don't wait
+        // to coalesce them with a follow-up write -- send each reply at once for
+        // lower per-request latency.
+        int nodelay = 1;
+        setsockopt(client_fd, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(nodelay));
+
         if (!check_client_ip(client_fd, &client_address))
         {
             close(client_fd); // no fd/memory leak on the rejected path
