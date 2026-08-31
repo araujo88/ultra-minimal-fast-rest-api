@@ -98,16 +98,19 @@ def run(host, port, scenario, concurrency, duration, keepalive):
     errors = sum(r[1] for r in results)
     lat = sorted(x for r in results for x in r[2])
     rps = total / duration
-    if lat:
-        mean = sum(lat) / len(lat) * 1e3
-        p50 = lat[int(0.50 * (len(lat) - 1))] * 1e3
-        p99 = lat[int(0.99 * (len(lat) - 1))] * 1e3
-    else:
-        mean = p50 = p99 = float("nan")
+
+    def pctl(q):  # nearest-rank percentile of the sorted latencies, in ms
+        if not lat:
+            return float("nan")
+        return lat[min(len(lat) - 1, int(q * len(lat)))] * 1e3
+
+    mean = (sum(lat) / len(lat) * 1e3) if lat else float("nan")
+    p50, p90, p95, p99 = pctl(0.50), pctl(0.90), pctl(0.95), pctl(0.99)
+    pmax = (lat[-1] * 1e3) if lat else float("nan")
     print(
-        f"{scenario:<8} c={concurrency:<4} "
-        f"{rps:9.0f} req/s   mean {mean:6.2f} ms   "
-        f"p50 {p50:6.2f} ms   p99 {p99:7.2f} ms   errors {errors}"
+        f"{scenario:<8} c={concurrency:<4} {rps:9.0f} req/s   "
+        f"p50 {p50:6.2f}  p90 {p90:6.2f}  p95 {p95:6.2f}  p99 {p99:7.2f}  "
+        f"max {pmax:7.2f} ms   (mean {mean:5.2f})   errors {errors}"
     )
     return rps
 

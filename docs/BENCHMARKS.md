@@ -19,7 +19,9 @@ keep-alive.
 
 Scenarios: `livez` (`GET /livez`, no DB), `list` (`GET /users`), `get_one`
 (`GET /users/1`), `create` (`POST /users`). Concurrency `c` = number of
-concurrent client connections (one worker process each).
+concurrent client connections (one worker process each). Each cell reports
+throughput (req/s) and the latency distribution — **p50, p90, p95, p99, and
+max** — because the mean hides the tail that matters.
 
 ## 1. Connection model: per-request vs keep-alive
 
@@ -41,7 +43,26 @@ endpoints (`GET /livez`, `GET /users/1` ≈ 2.4× at c=1), where connection setu
 is a large fraction of the work. At higher concurrency the worker pool and the
 database become the ceiling, so the gain shrinks.
 
-## 2. Write throughput: WAL
+## 2. Latency distribution
+
+Throughput alone is misleading — a mean of ~1 ms can hide a 1-second worst case.
+Latency percentiles at c=16 (milliseconds):
+
+| Scenario | model         |  p50 |  p90 |  p95 |   p99 |     max |
+| -------- | ------------- | ---: | ---: | ---: | ----: | ------: |
+| `get_one`| per-request   | 0.75 | 1.37 | 2.39 |  3.20 | ~1086   |
+| `get_one`| keep-alive    | 0.32 | 0.74 | 0.92 | 11.62 |   58.6  |
+| `create` | per-request   | 0.69 | 1.22 | 1.65 | 18.27 | ~1063   |
+| `create` | keep-alive    | 0.28 | 0.50 | 0.65 | 25.98 |   57.7  |
+
+**Takeaway:** the median is sub-millisecond, but the tail is where the design
+shows through. Per-request has a **~1-second `max`** — a handful of connections
+stall in the accept backlog under load — while keep-alive, having no per-request
+connection setup, keeps `max` bounded (~58 ms). The `create` p99/max also carry
+occasional WAL-checkpoint spikes. This is why the benchmark reports p95/p99/max,
+not just the mean.
+
+## 3. Write throughput: WAL
 
 Writes were the original bottleneck. With SQLite's default `synchronous=FULL`
 and a rollback journal, every `INSERT` does an `fsync`, and the writer is
@@ -57,7 +78,7 @@ Trade-off: under `synchronous=NORMAL` an application crash is still safe; only a
 OS/power crash can lose the last few committed transactions. Set
 `synchronous=FULL` for strict durability (giving back most of the speedup).
 
-## 3. Thread count
+## 4. Thread count
 
 The pool is thread-per-connection with a bounded queue (`--threads`, default 8).
 Does adding workers help? Sweep at c=32, ~2s/cell:
@@ -74,7 +95,7 @@ writer; no thread count parallelizes it). Thread count is not the bottleneck at
 these concurrencies — the ceilings are the single shared SQLite connection (for
 reads) and the single writer (for writes).
 
-## 4. Thread scaling and memory (small worker stacks)
+## 5. Thread scaling and memory (small worker stacks)
 
 Because the pool is thread-per-connection, the number of simultaneously *active*
 keep-alive connections is bounded by the worker count. Workers are given a small
