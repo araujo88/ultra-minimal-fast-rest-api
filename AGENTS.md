@@ -71,7 +71,8 @@ Module responsibilities:
   builder. Owns the DB write lock.
 - `threadpool.c` — one mutex, a bounded ring-buffer queue with backpressure,
   two condition variables, clean shutdown.
-- `include/models.h` — the data model. `include/settings.h` — default allowlist.
+- `include/models.h` — the data model. `include/settings.h` — compile-time
+  defaults for the client allowlist and Basic auth (`BASIC_AUTH_DEFAULT`).
 
 ## Invariants (do not regress these)
 
@@ -153,10 +154,11 @@ C parser harness run by `make http-test`.
   transactions (an application crash is safe).
 - The IP allowlist reads the real accepted peer address. Behind Docker's bridge,
   clients appear as the gateway IP — hence the image sets `ALLOWED_HOSTS=*`.
-- Optional Basic auth (`BASIC_AUTH="user:password"`, off by default): the
-  expected credential is base64-encoded once at startup and compared
-  constant-time against each request's `Authorization: Basic` token, so the
-  untrusted header is never base64-decoded. It is checked per request in
+- Optional Basic auth (off by default): the credential comes from the
+  `BASIC_AUTH` env var, else the `BASIC_AUTH_DEFAULT` compile-time default in
+  `settings.h` (empty = disabled). It is base64-encoded once at startup and
+  compared constant-time against each request's `Authorization: Basic` token, so
+  the untrusted header is never base64-decoded. Checked per request in
   `send_data`. Over plain HTTP this is minimal auth, not a TLS substitute.
 - `sqlite3.db` is created in the working directory; tests and `make valgrind`
   clean it up.

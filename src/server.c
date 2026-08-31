@@ -356,8 +356,12 @@ static char *base64_encode(const char *in)
 
 static void init_basic_auth(void)
 {
+    // Runtime env var wins; otherwise fall back to the compile-time default in
+    // settings.h (empty = disabled), mirroring the ALLOWED_HOSTS pattern.
     // Flawfinder: ignore getenv
     const char *cred = getenv("BASIC_AUTH");
+    if (!cred || !*cred)
+        cred = BASIC_AUTH_DEFAULT;
     if (cred && *cred)
     {
         g_auth_expected = base64_encode(cred);
