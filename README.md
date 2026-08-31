@@ -1,5 +1,11 @@
 # ultra-minimal-fast-rest-api
 
+[![CI](https://github.com/leo-aa88/ultra-minimal-fast-rest-api/actions/workflows/ci.yml/badge.svg)](https://github.com/leo-aa88/ultra-minimal-fast-rest-api/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/leo-aa88/ultra-minimal-fast-rest-api)](https://github.com/leo-aa88/ultra-minimal-fast-rest-api/releases/latest)
+[![License: GPL v3](https://img.shields.io/badge/license-GPLv3-blue.svg)](LICENSE)
+![C](https://img.shields.io/badge/C-C11%20%2F%20POSIX-00599C?logo=c&logoColor=white)
+![Platform](https://img.shields.io/badge/platform-Linux-informational)
+
 A small, dependency-light REST-style HTTP server in C: POSIX sockets, a custom
 bounded thread pool, and SQLite, with the data model and its CRUD routes
 derived from a single compile-time declaration.
