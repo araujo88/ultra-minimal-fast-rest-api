@@ -31,6 +31,8 @@ against.
 - **Compile-time model**: define your table once in `include/models.h`; schema,
   SQL, JSON, and routes follow.
 - **Client IP allowlist**, configurable at runtime via `ALLOWED_HOSTS`.
+- **Health probes**: `/livez` (liveness), `/readyz` / `/health` (readiness, `503`
+  if the database is unreachable) — exempt from Basic auth for orchestrators.
 
 ## Quick start (Linux)
 
@@ -66,15 +68,18 @@ For the example `users` model:
 
 | Method & path        | Success           | Notes |
 | -------------------- | ----------------- | ----- |
-| `GET /`              | `200` text/html   | "Hello world!" |
+| `GET /livez`         | `200` JSON        | liveness — the process is up |
+| `GET /readyz`, `GET /health` | `200` JSON | readiness — `503` if the database is unreachable |
 | `GET /users`         | `200` JSON array  | `[]` when empty; `500` if the list exceeds the response buffer |
 | `POST /users`        | `201` JSON        | body is `application/x-www-form-urlencoded` |
 | `GET /users/<id>`    | `200` JSON object | `404` if not found, `400` if `<id>` is non-numeric |
 | `PUT /users/<id>`    | `200` JSON        | `404` if not found, `400` if `<id>` is non-numeric |
 | `DELETE /users/<id>` | `204` No Content  | `404` if not found, `400` if `<id>` is non-numeric |
 
-Unknown routes return `404`; unsupported methods on a known path return `405`;
-database/serialization failures return `500`.
+Unknown routes (including `/`) return `404`; unsupported methods on a known path
+return `405`; database/serialization failures return `500`. The health endpoints
+are exempt from Basic auth (so orchestrators can probe them); the IP allowlist
+still applies.
 
 ## Defining your model
 
@@ -165,7 +170,7 @@ setup matters most); `@ c=16` is under 16 concurrent clients:
 
 | Scenario            | per-request @ c=1 | keep-alive @ c=1 | per-request @ c=16 | keep-alive @ c=16 |
 | ------------------- | ----------------: | ---------------: | -----------------: | ----------------: |
-| `GET /` (no DB)     |            ~9,900 |          ~24,000 |            ~16,700 |           ~40,000 |
+| `GET /livez` (no DB)|            ~9,900 |          ~24,000 |            ~16,700 |           ~40,000 |
 | `GET /users` (list) |            ~6,700 |          ~10,600 |            ~14,500 |           ~13,700 |
 | `GET /users/1`      |            ~8,100 |          ~19,500 |            ~15,200 |           ~23,700 |
 | `POST /users`       |            ~6,400 |          ~12,300 |            ~14,300 |           ~15,200 |
@@ -188,7 +193,7 @@ What this says about "fast":
     of the write speedup).
 - **HTTP/1.1 keep-alive** ([`send_data()`](src/server.c)) reuses a connection for
   many requests, removing per-request TCP setup. The win is largest for
-  single/low-concurrency clients and cheap endpoints (`GET /` ~2.4×, `GET
+  single/low-concurrency clients and cheap endpoints (`GET /livez` ~2.4×, `GET
   /users/1` ~2.4× at c=1); at higher concurrency the 8-worker pool and the DB
   become the ceiling, so the gain shrinks.
   - *Trade-off:* this is a **blocking** thread pool, so a kept-alive connection

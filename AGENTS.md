@@ -160,6 +160,10 @@ C parser harness run by `make http-test`.
   compared constant-time against each request's `Authorization: Basic` token, so
   the untrusted header is never base64-decoded. Checked per request in
   `send_data`. Over plain HTTP this is minimal auth, not a TLS substitute.
+- Health endpoints (`/livez`, `/readyz`, `/health`) are **exempt from Basic
+  auth** (`is_health_target` in `server.c`) so orchestrators can probe them
+  without credentials; the IP allowlist still applies. `/readyz` and `/health`
+  return `503` if `db_ok()` fails.
 - `sqlite3.db` is created in the working directory; tests and `make valgrind`
   clean it up.
 - HTTP keep-alive: `send_data()` loops over one connection while it stays alive.

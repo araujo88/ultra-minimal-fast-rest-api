@@ -24,7 +24,7 @@ VG=$!
 # Valgrind startup is slow; wait (up to ~40s) for the port to accept.
 ready=
 for _ in $(seq 1 40); do
-    if curl -s -o /dev/null "http://$HOST:$PORT/" 2>/dev/null; then ready=1; break; fi
+    if curl -s -o /dev/null "http://$HOST:$PORT/livez" 2>/dev/null; then ready=1; break; fi
     kill -0 "$VG" 2>/dev/null || { echo "server exited during startup"; cat "$LOG"; exit 1; }
     sleep 1
 done
@@ -38,6 +38,8 @@ curl -s -o /dev/null "$base/users/999"                                    # 404 
 curl -s -o /dev/null -X PUT "$base/users/1" -d 'name=C&surname=D&age=2&height=1.2'
 curl -s -o /dev/null -X DELETE "$base/users/1"
 curl -s -o /dev/null "$base/nope"                                         # unknown route
+curl -s -o /dev/null "$base/livez"                                        # liveness
+curl -s -o /dev/null "$base/readyz"                                       # readiness (db_ok)
 # Malformed request (no newline) via bash /dev/tcp, then close to send FIN.
 { exec 3<>"/dev/tcp/$HOST/$PORT" && printf 'GARBAGE-NO-NEWLINE' >&3 && exec 3>&-; } 2>/dev/null || true
 

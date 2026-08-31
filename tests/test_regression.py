@@ -31,9 +31,9 @@ def find_by_name(rows, name):
 
 
 def healthy(base):
-    """The server still answers a normal request."""
-    r = requests.get(base, timeout=TIMEOUT)
-    return r.status_code == 200 and "Hello world" in r.text
+    """The server still answers a normal request (liveness probe)."""
+    r = requests.get(f"{base}livez", timeout=TIMEOUT)
+    return r.status_code == 200
 
 
 # --------------------------------------------------------------------------- #
@@ -41,11 +41,6 @@ def healthy(base):
 # --------------------------------------------------------------------------- #
 
 class TestCrud:
-    def test_root(self, server):
-        r = requests.get(server, timeout=TIMEOUT)
-        assert r.status_code == 200
-        assert "Hello world" in r.text
-
     def test_empty_list_is_valid_json_array(self, server):
         assert get_list(server) == []
 
@@ -90,6 +85,33 @@ class TestCrud:
         assert get_list(server) == []
         # The resource is gone now -> 404.
         assert requests.get(f"{server}users/1", timeout=TIMEOUT).status_code == 404
+
+
+# --------------------------------------------------------------------------- #
+# Health / liveness / readiness endpoints
+# --------------------------------------------------------------------------- #
+
+class TestHealth:
+    def test_root_removed_is_404(self, server):
+        assert requests.get(server, timeout=TIMEOUT).status_code == 404
+
+    def test_livez(self, server):
+        r = requests.get(f"{server}livez", timeout=TIMEOUT)
+        assert r.status_code == 200
+        assert r.json()["status"] == "ok"
+
+    def test_readyz(self, server):
+        r = requests.get(f"{server}readyz", timeout=TIMEOUT)
+        assert r.status_code == 200
+        assert r.json()["status"] == "ok"
+
+    def test_health(self, server):
+        r = requests.get(f"{server}health", timeout=TIMEOUT)
+        assert r.status_code == 200
+        assert r.json()["status"] == "ok"
+
+    def test_health_wrong_method_405(self, server):
+        assert requests.post(f"{server}livez", timeout=TIMEOUT).status_code == 405
 
 
 # --------------------------------------------------------------------------- #
@@ -176,31 +198,31 @@ class TestAllowlist:
 
     def test_default_allows_localhost(self, server):
         # No ALLOWED_HOSTS set -> compile-time default includes 127.0.0.1.
-        assert requests.get(self.BASE, timeout=TIMEOUT).status_code == 200
+        assert requests.get(f"{self.BASE}livez", timeout=TIMEOUT).status_code == 200
 
     def test_restricted_list_forbids_localhost(self, server_manager):
         server_manager(env={"ALLOWED_HOSTS": "10.1.2.3"})
-        assert requests.get(self.BASE, timeout=TIMEOUT).status_code == 403
+        assert requests.get(f"{self.BASE}livez", timeout=TIMEOUT).status_code == 403
 
     def test_wildcard_allows_everyone(self, server_manager):
         server_manager(env={"ALLOWED_HOSTS": "*"})
-        assert requests.get(self.BASE, timeout=TIMEOUT).status_code == 200
+        assert requests.get(f"{self.BASE}livez", timeout=TIMEOUT).status_code == 200
 
     def test_localhost_in_custom_list_allowed(self, server_manager):
         server_manager(env={"ALLOWED_HOSTS": "10.1.2.3, 127.0.0.1"})
-        assert requests.get(self.BASE, timeout=TIMEOUT).status_code == 200
+        assert requests.get(f"{self.BASE}livez", timeout=TIMEOUT).status_code == 200
 
     def test_garbage_only_falls_back_to_default(self, server_manager):
         # No syntactically valid IPv4 -> fall back to the restrictive default
         # (which includes 127.0.0.1) rather than denying everyone.
         server_manager(env={"ALLOWED_HOSTS": "not-an-ip;drop table"})
-        assert requests.get(self.BASE, timeout=TIMEOUT).status_code == 200
+        assert requests.get(f"{self.BASE}livez", timeout=TIMEOUT).status_code == 200
 
     def test_invalid_entries_are_ignored_valid_kept(self, server_manager):
         # Garbage tokens are dropped; the valid one still governs. Localhost is
         # not in the list, so it is forbidden.
         server_manager(env={"ALLOWED_HOSTS": "not-an-ip, 999.999.1.1, 10.1.2.3"})
-        assert requests.get(self.BASE, timeout=TIMEOUT).status_code == 403
+        assert requests.get(f"{self.BASE}livez", timeout=TIMEOUT).status_code == 403
 
 
 # --------------------------------------------------------------------------- #
@@ -210,21 +232,21 @@ class TestAllowlist:
 class TestConfig:
     def test_port_via_env(self, server_manager):
         server_manager(env={"PORT": "9010"}, port=9010)
-        assert requests.get("http://127.0.0.1:9010/", timeout=TIMEOUT).status_code == 200
+        assert requests.get("http://127.0.0.1:9010/livez", timeout=TIMEOUT).status_code == 200
 
     def test_port_via_cli_flag(self, server_manager):
         server_manager(args=["--port", "9011"], port=9011)
-        assert requests.get("http://127.0.0.1:9011/", timeout=TIMEOUT).status_code == 200
+        assert requests.get("http://127.0.0.1:9011/livez", timeout=TIMEOUT).status_code == 200
 
     def test_cli_flag_overrides_env(self, server_manager):
         # Env sets 9010, CLI sets 9012; the CLI flag must win.
         server_manager(env={"PORT": "9010"}, args=["--port", "9012"], port=9012)
-        assert requests.get("http://127.0.0.1:9012/", timeout=TIMEOUT).status_code == 200
+        assert requests.get("http://127.0.0.1:9012/livez", timeout=TIMEOUT).status_code == 200
         assert wait_closed(0.5, port=9010)  # nothing bound on the (overridden) env port
 
     def test_thread_count_via_env(self, server_manager):
         server_manager(env={"THREADS": "2"})  # non-default worker count still serves
-        assert requests.get(f"http://{HOST}:{PORT}/", timeout=TIMEOUT).status_code == 200
+        assert requests.get(f"http://{HOST}:{PORT}/livez", timeout=TIMEOUT).status_code == 200
 
     def test_invalid_port_flag_exits_nonzero(self):
         r = subprocess.run([SERVER_BIN, "--port", "70000"], cwd=REPO_ROOT,
@@ -267,6 +289,14 @@ class TestBasicAuth:
     def test_disabled_by_default(self, server):
         # No BASIC_AUTH env -> auth off, no credentials needed.
         assert requests.get(f"{server}users", timeout=TIMEOUT).status_code == 200
+
+    def test_health_endpoints_are_exempt(self, server_manager):
+        # Orchestrators probe health without credentials, so those endpoints
+        # must stay reachable even when auth is on; /users still requires it.
+        server_manager(env=self.AUTH)
+        assert requests.get(f"{self.BASE}livez", timeout=TIMEOUT).status_code == 200
+        assert requests.get(f"{self.BASE}readyz", timeout=TIMEOUT).status_code == 200
+        assert requests.get(f"{self.BASE}users", timeout=TIMEOUT).status_code == 401
 
 
 # --------------------------------------------------------------------------- #
@@ -378,7 +408,7 @@ class TestKeepAlive:
         try:
             # Two requests sent back-to-back on one connection, before reading.
             s.sendall(b"GET /users/1 HTTP/1.1\r\nHost: x\r\n\r\n"
-                      b"GET / HTTP/1.1\r\nHost: x\r\n\r\n")
+                      b"GET /livez HTTP/1.1\r\nHost: x\r\n\r\n")
             data = b""
             while data.count(b"HTTP/1.1 200") < 2:
                 d = s.recv(4096)
@@ -401,7 +431,7 @@ class TestKeepAlive:
         post = (b"POST /users HTTP/1.1\r\nHost: x\r\n"
                 b"Content-Type: application/x-www-form-urlencoded\r\n"
                 b"Content-Length: %d\r\n\r\n" % len(body)) + body
-        nxt = b"GET / HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n"
+        nxt = b"GET /livez HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n"
 
         s = socket.create_connection((HOST, PORT), timeout=TIMEOUT)
         s.settimeout(TIMEOUT)
@@ -438,7 +468,7 @@ class TestKeepAlive:
         data = b""
         try:
             s.sendall(b"DELETE /users/1 HTTP/1.1\r\nHost: x\r\n\r\n"
-                      b"GET / HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")
+                      b"GET /livez HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")
             while True:
                 d = s.recv(4096)
                 if not d:
@@ -454,7 +484,7 @@ class TestKeepAlive:
         s.settimeout(TIMEOUT)
         data = b""
         try:
-            s.sendall(b"GET / HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")
+            s.sendall(b"GET /livez HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")
             while True:  # server must close after this response
                 d = s.recv(4096)
                 if not d:
@@ -470,7 +500,7 @@ class TestKeepAlive:
         s.settimeout(TIMEOUT)
         data = b""
         try:
-            s.sendall(b"GET / HTTP/1.0\r\nHost: x\r\n\r\n")
+            s.sendall(b"GET /livez HTTP/1.0\r\nHost: x\r\n\r\n")
             while True:  # HTTP/1.0 defaults to close
                 d = s.recv(4096)
                 if not d:

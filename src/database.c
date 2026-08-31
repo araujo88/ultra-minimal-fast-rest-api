@@ -461,6 +461,18 @@ void close_database()
     sqlite3_close(db);
 }
 
+// Readiness probe: can the connection execute a trivial query right now?
+int db_ok(void)
+{
+    sqlite3_stmt *stmt = NULL;
+    int ok = 0;
+    if (sqlite3_prepare_v2(db, "SELECT 1;", -1, &stmt, NULL) == SQLITE_OK &&
+        sqlite3_step(stmt) == SQLITE_ROW)
+        ok = 1;
+    sqlite3_finalize(stmt);
+    return ok;
+}
+
 void check_connection(int rc)
 {
     char *current_date;

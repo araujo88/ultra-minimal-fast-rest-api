@@ -12,11 +12,29 @@ static void log_status(const char *color, const char *status)
     printf("%sHTTP/1.1 %s\033[0m\n", color, status);
 }
 
-void root_view(void *client_socket)
+// Liveness: the process is up and answering. No dependency checks.
+void livez_view(void *client_socket)
 {
     int fd = *(int *)client_socket;
     log_status(GREEN, "200 OK");
-    response_send(fd, "200 OK", "text/html", "Hello world!");
+    response_send(fd, "200 OK", "application/json", "{\"status\": \"ok\"}");
+}
+
+// Readiness / health: 200 only if the database answers, else 503.
+void health_view(void *client_socket)
+{
+    int fd = *(int *)client_socket;
+    if (db_ok())
+    {
+        log_status(GREEN, "200 OK");
+        response_send(fd, "200 OK", "application/json", "{\"status\": \"ok\"}");
+    }
+    else
+    {
+        log_status(RED, "503 Service Unavailable");
+        response_send(fd, "503 Service Unavailable", "application/json",
+                      "{\"status\": \"unavailable\"}");
+    }
 }
 
 void get_users_view(void *client_socket)
