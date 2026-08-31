@@ -15,6 +15,24 @@ sqlite3 *db;
 // connection itself is used in SQLite's default serialized threading mode.
 static pthread_mutex_t db_write_lock = PTHREAD_MUTEX_INITIALIZER;
 
+// Cached write statements. Each write path compiles its statement once (lazily,
+// on first use) and then reuses it -- resetting and clearing bindings between
+// calls -- instead of preparing and finalizing on every request. This is safe
+// to share globally precisely because every write holds db_write_lock, so only
+// one thread ever touches these at a time. They are finalized in
+// close_database() before sqlite3_close() (an unfinalized statement makes
+// sqlite3_close() return SQLITE_BUSY and leak the connection).
+//
+// Read paths (get_entry/get_entries) are deliberately NOT cached this way: they
+// run lock-free and concurrently, and a single sqlite3_stmt must not be stepped
+// by two threads at once, so a shared read statement would be a data race.
+// Caching reads would require either locking them (regressing lock-free reads)
+// or per-thread statements (which complicate the clean single-connection
+// shutdown), so reads keep preparing per request.
+static sqlite3_stmt *stmt_insert = NULL;
+static sqlite3_stmt *stmt_update = NULL;
+static sqlite3_stmt *stmt_delete = NULL;
+
 // ---------------------------------------------------------------------------
 // Bounded string builder + JSON serialization
 //
@@ -275,39 +293,45 @@ int get_entry(unsigned int id, char *buffer, size_t cap)
 
 static int create_entry_impl(char struct_string[NUM_COLS][STR_LEN], char *buffer, size_t cap)
 {
-    char sql[SQL_QUERY_SIZE];
-    sqlite3_stmt *stmt = NULL;
     int i;
 
-    snprintf(sql, sizeof(sql), "INSERT INTO %s (", TABLE_NAME);
-    for (i = 0; i < NUM_COLS; i++)
+    if (stmt_insert == NULL) // compile once, then reuse across requests
     {
-        size_t n = strlen(sql);
-        snprintf(sql + n, sizeof(sql) - n, "%s%s", TABLE_COLS[i][0], (i + 1 < NUM_COLS) ? ", " : "");
-    }
-    {
-        size_t n = strlen(sql);
-        snprintf(sql + n, sizeof(sql) - n, ") VALUES (");
-    }
-    for (i = 0; i < NUM_COLS; i++)
-    {
-        size_t n = strlen(sql);
-        snprintf(sql + n, sizeof(sql) - n, "?%s", (i + 1 < NUM_COLS) ? ", " : "");
-    }
-    {
-        size_t n = strlen(sql);
-        snprintf(sql + n, sizeof(sql) - n, ");");
+        char sql[SQL_QUERY_SIZE];
+        snprintf(sql, sizeof(sql), "INSERT INTO %s (", TABLE_NAME);
+        for (i = 0; i < NUM_COLS; i++)
+        {
+            size_t n = strlen(sql);
+            snprintf(sql + n, sizeof(sql) - n, "%s%s", TABLE_COLS[i][0], (i + 1 < NUM_COLS) ? ", " : "");
+        }
+        {
+            size_t n = strlen(sql);
+            snprintf(sql + n, sizeof(sql) - n, ") VALUES (");
+        }
+        for (i = 0; i < NUM_COLS; i++)
+        {
+            size_t n = strlen(sql);
+            snprintf(sql + n, sizeof(sql) - n, "?%s", (i + 1 < NUM_COLS) ? ", " : "");
+        }
+        {
+            size_t n = strlen(sql);
+            snprintf(sql + n, sizeof(sql) - n, ");");
+        }
+        // On failure sqlite3_prepare_v2 leaves stmt_insert NULL, so a later call
+        // simply retries the compile.
+        if (sqlite3_prepare_v2(db, sql, -1, &stmt_insert, NULL) != SQLITE_OK)
+        {
+            check_sql(SQLITE_ERROR, NULL, buffer, cap);
+            return DB_ERROR;
+        }
     }
 
-    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
-    if (rc == SQLITE_OK)
-    {
-        for (i = 0; i < NUM_COLS; i++)
-            sqlite3_bind_text(stmt, i + 1, struct_string[i], -1, SQLITE_TRANSIENT);
-        rc = sqlite3_step(stmt);
-        rc = (rc == SQLITE_DONE) ? SQLITE_OK : rc;
-    }
-    sqlite3_finalize(stmt);
+    for (i = 0; i < NUM_COLS; i++)
+        sqlite3_bind_text(stmt_insert, i + 1, struct_string[i], -1, SQLITE_TRANSIENT);
+    int rc = sqlite3_step(stmt_insert);
+    rc = (rc == SQLITE_DONE) ? SQLITE_OK : rc;
+    sqlite3_reset(stmt_insert); // ready for the next call; keep the compiled plan
+    sqlite3_clear_bindings(stmt_insert);
 
     check_sql(rc, NULL, buffer, cap);
     return (rc == SQLITE_OK) ? DB_OK : DB_ERROR;
@@ -315,36 +339,42 @@ static int create_entry_impl(char struct_string[NUM_COLS][STR_LEN], char *buffer
 
 static int update_entry_impl(unsigned int id, char struct_string[NUM_COLS][STR_LEN], char *buffer, size_t cap)
 {
-    char sql[SQL_QUERY_SIZE];
-    sqlite3_stmt *stmt = NULL;
     int i;
     int changes = 0;
 
-    snprintf(sql, sizeof(sql), "UPDATE %s SET", TABLE_NAME);
-    for (i = 0; i < NUM_COLS; i++)
+    if (stmt_update == NULL) // compile once, then reuse across requests
     {
-        size_t n = strlen(sql);
-        snprintf(sql + n, sizeof(sql) - n, " %s = ?%s", TABLE_COLS[i][0], (i + 1 < NUM_COLS) ? "," : "");
-    }
-    {
-        size_t n = strlen(sql);
-        snprintf(sql + n, sizeof(sql) - n, " WHERE Id = ?;");
-    }
-
-    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
-    if (rc == SQLITE_OK)
-    {
+        char sql[SQL_QUERY_SIZE];
+        snprintf(sql, sizeof(sql), "UPDATE %s SET", TABLE_NAME);
         for (i = 0; i < NUM_COLS; i++)
-            sqlite3_bind_text(stmt, i + 1, struct_string[i], -1, SQLITE_TRANSIENT);
-        sqlite3_bind_int64(stmt, NUM_COLS + 1, (sqlite3_int64)id);
-        rc = sqlite3_step(stmt);
-        if (rc == SQLITE_DONE)
         {
-            changes = sqlite3_changes(db);
-            rc = SQLITE_OK;
+            size_t n = strlen(sql);
+            snprintf(sql + n, sizeof(sql) - n, " %s = ?%s", TABLE_COLS[i][0], (i + 1 < NUM_COLS) ? "," : "");
+        }
+        {
+            size_t n = strlen(sql);
+            snprintf(sql + n, sizeof(sql) - n, " WHERE Id = ?;");
+        }
+        if (sqlite3_prepare_v2(db, sql, -1, &stmt_update, NULL) != SQLITE_OK)
+        {
+            check_sql(SQLITE_ERROR, NULL, buffer, cap);
+            return DB_ERROR;
         }
     }
-    sqlite3_finalize(stmt);
+
+    for (i = 0; i < NUM_COLS; i++)
+        sqlite3_bind_text(stmt_update, i + 1, struct_string[i], -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(stmt_update, NUM_COLS + 1, (sqlite3_int64)id);
+    int rc = sqlite3_step(stmt_update);
+    if (rc == SQLITE_DONE)
+    {
+        // sqlite3_changes() is read while db_write_lock is still held (see the
+        // public wrapper) and before any other statement can run -- invariant 5.
+        changes = sqlite3_changes(db);
+        rc = SQLITE_OK;
+    }
+    sqlite3_reset(stmt_update);
+    sqlite3_clear_bindings(stmt_update);
 
     if (rc != SQLITE_OK)
     {
@@ -359,21 +389,26 @@ static int update_entry_impl(unsigned int id, char struct_string[NUM_COLS][STR_L
 
 static int delete_entry_impl(unsigned int id, char *buffer, size_t cap)
 {
-    sqlite3_stmt *stmt = NULL;
     int changes = 0;
 
-    int rc = sqlite3_prepare_v2(db, "DELETE FROM " TABLE_NAME " WHERE Id = ?;", -1, &stmt, NULL);
-    if (rc == SQLITE_OK)
+    if (stmt_delete == NULL) // compile once, then reuse across requests
     {
-        sqlite3_bind_int64(stmt, 1, (sqlite3_int64)id);
-        rc = sqlite3_step(stmt);
-        if (rc == SQLITE_DONE)
+        if (sqlite3_prepare_v2(db, "DELETE FROM " TABLE_NAME " WHERE Id = ?;", -1, &stmt_delete, NULL) != SQLITE_OK)
         {
-            changes = sqlite3_changes(db);
-            rc = SQLITE_OK;
+            check_sql(SQLITE_ERROR, NULL, buffer, cap);
+            return DB_ERROR;
         }
     }
-    sqlite3_finalize(stmt);
+
+    sqlite3_bind_int64(stmt_delete, 1, (sqlite3_int64)id);
+    int rc = sqlite3_step(stmt_delete);
+    if (rc == SQLITE_DONE)
+    {
+        changes = sqlite3_changes(db); // still under db_write_lock -- invariant 5
+        rc = SQLITE_OK;
+    }
+    sqlite3_reset(stmt_delete);
+    sqlite3_clear_bindings(stmt_delete);
 
     if (rc != SQLITE_OK)
     {
@@ -458,6 +493,13 @@ void check_version()
 
 void close_database()
 {
+    // Finalize the cached write statements before closing: sqlite3_close()
+    // returns SQLITE_BUSY (and leaks the connection) if any prepared statement
+    // is still live. sqlite3_finalize(NULL) is a safe no-op for any never-used.
+    sqlite3_finalize(stmt_insert);
+    sqlite3_finalize(stmt_update);
+    sqlite3_finalize(stmt_delete);
+    stmt_insert = stmt_update = stmt_delete = NULL;
     sqlite3_close(db);
 }
 

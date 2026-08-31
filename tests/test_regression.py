@@ -88,6 +88,63 @@ class TestCrud:
 
 
 # --------------------------------------------------------------------------- #
+# Prepared-statement reuse: the write statements (INSERT/UPDATE/DELETE) are
+# compiled once and reused across requests (reset + clear_bindings between
+# calls). These exercise that reuse with distinct payloads so a stale/leaked
+# binding, or a botched reset, would show up as cross-contamination between rows.
+# --------------------------------------------------------------------------- #
+
+class TestStatementReuse:
+    def test_repeated_inserts_keep_distinct_values(self, server):
+        people = [
+            {"name": f"n{i}", "surname": f"s{i}", "age": i, "height": 1.0 + i / 100}
+            for i in range(1, 11)
+        ]
+        for p in people:
+            assert requests.post(f"{server}users", data=p, timeout=TIMEOUT).status_code == 201
+
+        rows = get_list(server)
+        assert len(rows) == 10
+        by_id = {row["Id"]: row for row in rows}
+        for i, p in enumerate(people, start=1):
+            row = by_id[i]  # ids are assigned 1..10 in insertion order
+            assert row["name"] == p["name"]
+            assert row["surname"] == p["surname"]
+            assert row["age"] == p["age"]
+            assert abs(row["height"] - p["height"]) < 1e-9
+
+    def test_repeated_updates_are_independent(self, server):
+        for _ in range(5):
+            requests.post(f"{server}users",
+                          data={"name": "x", "surname": "y", "age": 0, "height": 1.0},
+                          timeout=TIMEOUT)
+        # Update each row to a distinct value over the reused UPDATE statement.
+        for i in range(1, 6):
+            r = requests.put(f"{server}users/{i}",
+                             data={"name": f"u{i}", "surname": f"v{i}", "age": i * 10, "height": 2.0 + i},
+                             timeout=TIMEOUT)
+            assert r.status_code == 200
+        for i in range(1, 6):
+            one = requests.get(f"{server}users/{i}", timeout=TIMEOUT).json()
+            assert one["name"] == f"u{i}"
+            assert one["age"] == i * 10
+
+    def test_repeated_deletes_report_correct_change_count(self, server):
+        for _ in range(5):
+            requests.post(f"{server}users",
+                          data={"name": "x", "surname": "y", "age": 0, "height": 1.0},
+                          timeout=TIMEOUT)
+        # Delete an existing row (204), then re-delete the same id (404): the
+        # reused DELETE statement must still report changes correctly after reset.
+        assert requests.delete(f"{server}users/3", timeout=TIMEOUT).status_code == 204
+        assert requests.delete(f"{server}users/3", timeout=TIMEOUT).status_code == 404
+        # A non-existent id over the reused statement is still a 404, not a 204.
+        assert requests.delete(f"{server}users/999", timeout=TIMEOUT).status_code == 404
+        remaining = sorted(row["Id"] for row in get_list(server))
+        assert remaining == [1, 2, 4, 5]
+
+
+# --------------------------------------------------------------------------- #
 # Health / liveness / readiness endpoints
 # --------------------------------------------------------------------------- #
 
