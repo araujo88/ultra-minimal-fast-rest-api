@@ -34,7 +34,7 @@ body:
         run gets fixed much faster.
       placeholder: |
         1. make && ./server --host 127.0.0.1 --port 9002
-        2. curl -i -X POST 127.0.0.1:9002/users -d 'name=alice&email=a@b.c&age=30'
+        2. curl -i -X POST 127.0.0.1:9002/users -d 'name=alice&surname=smith&age=30&height=1.8'
         3. curl -i 127.0.0.1:9002/users   # returns []
       render: shell
     validations:
