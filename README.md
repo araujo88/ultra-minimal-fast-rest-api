@@ -113,6 +113,12 @@ default; both override the built-in default):
 | Listen port | `-p, --port` | `PORT` | `9002` |
 | Worker threads | `-t, --threads` | `THREADS` | `8` |
 | Listen backlog | `-b, --backlog` | `BACKLOG` | `10` |
+| Client allowlist | — | `ALLOWED_HOSTS` | `127.0.0.1` (`settings.h`) |
+| Basic auth | — | `BASIC_AUTH` | off (`settings.h`) |
+
+The last two default from [`include/settings.h`](include/settings.h)
+(`ALLOWED_HOSTS[]` and `BASIC_AUTH_DEFAULT`) and are overridden by their env vars
+at runtime — see below.
 
 ```bash
 ./server --host 127.0.0.1 --port 8080 --threads 16
@@ -125,10 +131,16 @@ PORT=8080 THREADS=16 ./server        # equivalent via env
   or `*` to allow all clients. Invalid entries are ignored; if unset, the
   compile-time default in [`include/settings.h`](include/settings.h) applies
   (`127.0.0.1`). Example: `ALLOWED_HOSTS="127.0.0.1,10.0.0.5" ./server`.
-- **`BASIC_AUTH`** (environment variable) — set to `user:password` to require
-  HTTP Basic authentication on every request (missing/incorrect credentials get
-  `401` with a `WWW-Authenticate` challenge). Unset (default) means no auth.
-  Example: `BASIC_AUTH="admin:s3cret" ./server`.
+- **`BASIC_AUTH`** — require HTTP Basic authentication on every request
+  (missing/incorrect credentials get `401` with a `WWW-Authenticate` challenge).
+  Configure it either way:
+  - **At runtime:** `BASIC_AUTH="admin:s3cret" ./server` (preferred for real
+    credentials — keeps them out of source control).
+  - **At compile time:** set `#define BASIC_AUTH_DEFAULT "admin:s3cret"` in
+    [`include/settings.h`](include/settings.h) and rebuild. The env var, when
+    set, overrides this.
+
+  Empty in both places (the default) means no auth.
   > ⚠️ Basic auth over plain HTTP only **base64-encodes** credentials (no
   > encryption). Treat it as minimal auth for a trusted/dev network; put TLS in
   > front (e.g. a reverse proxy) for anything real. See [SECURITY.md](SECURITY.md).
@@ -193,7 +205,7 @@ What this says about "fast":
 | `src/database.c` | SQLite CRUD (prepared statements) + bounded JSON serialization |
 | `src/threadpool.c` | Bounded worker pool with backpressure |
 | `include/models.h` | The data model (edit this) |
-| `include/settings.h` | Default client allowlist |
+| `include/settings.h` | Compile-time defaults: client allowlist and Basic auth |
 
 ## Development
 
