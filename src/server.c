@@ -70,10 +70,19 @@ static void route_request(int fd, const char *method, const char *target, const 
     snprintf(base, sizeof(base), "/%s", TABLE_NAME);
     snprintf(baseslash, sizeof(baseslash), "/%s/", TABLE_NAME);
 
-    if (strcmp(target, "/") == 0)
+    if (strcmp(target, "/livez") == 0)
     {
         if (strcmp(method, "GET") == 0)
-            root_view(&fd);
+            livez_view(&fd);
+        else
+            send_error(fd, "405 Method Not Allowed", "<html><h1>405 Method Not Allowed</h1></html>");
+        return;
+    }
+
+    if (strcmp(target, "/readyz") == 0 || strcmp(target, "/health") == 0)
+    {
+        if (strcmp(method, "GET") == 0)
+            health_view(&fd);
         else
             send_error(fd, "405 Method Not Allowed", "<html><h1>405 Method Not Allowed</h1></html>");
         return;
@@ -143,6 +152,15 @@ static void route_request(int fd, const char *method, const char *target, const 
 #define AUTH_REALM "ultra-minimal-fast-rest-api"
 static int basic_auth_ok(const char *req);
 
+// Health/liveness endpoints are exempt from Basic auth so orchestrators and
+// load balancers can probe them without credentials (the IP allowlist still
+// applies).
+static int is_health_target(const char *target)
+{
+    return strcmp(target, "/livez") == 0 || strcmp(target, "/readyz") == 0 ||
+           strcmp(target, "/health") == 0;
+}
+
 void send_data(void *client_socket)
 {
     int fd = *(int *)client_socket;
@@ -177,7 +195,7 @@ void send_data(void *client_socket)
             break; // a malformed request desynchronizes the stream: stop
         }
 
-        if (!basic_auth_ok(buf))
+        if (!is_health_target(target) && !basic_auth_ok(buf))
         {
             response_log_prefix();
             printf("%s %s -> 401 Unauthorized\n", method, target);

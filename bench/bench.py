@@ -20,7 +20,7 @@ import socket
 import time
 
 SCENARIOS = {
-    "root": b"GET / HTTP/1.1\r\nHost: b\r\n\r\n",
+    "livez": b"GET /livez HTTP/1.1\r\nHost: b\r\n\r\n",
     "list": b"GET /users HTTP/1.1\r\nHost: b\r\n\r\n",
     "get_one": b"GET /users/1 HTTP/1.1\r\nHost: b\r\n\r\n",
     "create": (
@@ -126,7 +126,7 @@ def main():
     mode = "keep-alive (connection reused)" if args.keepalive else "connection-per-request"
     print(f"Model: {mode}")
     if args.all:
-        for scenario in ("root", "list", "get_one", "create"):
+        for scenario in ("livez", "list", "get_one", "create"):
             for c in (1, 8, 16, 32):
                 run(args.host, args.port, scenario, c, args.duration, args.keepalive)
             print()

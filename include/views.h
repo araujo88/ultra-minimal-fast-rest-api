@@ -3,7 +3,8 @@
 
 #include <database.h>
 
-void root_view(void *client_socket);
+void livez_view(void *client_socket);
+void health_view(void *client_socket);
 void get_users_view(void *client_socket);
 void get_user_view(void *client_socket, unsigned int id);
 void delete_user_view(void *client_socket, unsigned int id);

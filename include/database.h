@@ -22,6 +22,7 @@ int update_entry(unsigned int id, char struct_string[NUM_COLS][STR_LEN], char *b
 int delete_entry(unsigned int id, char *buffer, size_t cap);
 void open_database();
 void close_database();
+int db_ok(void); // 1 if the database answers a trivial query, 0 otherwise (readiness)
 void check_connection(int rc);
 void check_version();
 void check_sql(int rc, char *err, char *buffer, size_t cap);
