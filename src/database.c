@@ -1,3 +1,4 @@
+#define _POSIX_C_SOURCE 200809L // ctime_r
 #include "../include/database.h"
 #include <string.h>
 #include <stdlib.h>
@@ -472,10 +473,10 @@ void check_version()
 {
     sqlite3_stmt *res;
 
-    char *current_date;
+    char current_date[32];
     time_t t;
     time(&t);
-    current_date = ctime(&t);
+    ctime_r(&t, current_date); // thread-safe; ctime() shares a static buffer
     current_date[strcspn(current_date, "\n")] = 0;
 
     int rc = sqlite3_prepare_v2(db, "SELECT SQLITE_VERSION()", -1, &res, 0);
@@ -517,10 +518,10 @@ int db_ok(void)
 
 void check_connection(int rc)
 {
-    char *current_date;
+    char current_date[32];
     time_t t;
     time(&t);
-    current_date = ctime(&t);
+    ctime_r(&t, current_date); // thread-safe; ctime() shares a static buffer
     current_date[strcspn(current_date, "\n")] = 0;
 
     if (rc != SQLITE_OK)
@@ -536,10 +537,12 @@ void check_connection(int rc)
 // a JSON status object is written into it (bounded by cap).
 void check_sql(int rc, char *err, char *buffer, size_t cap)
 {
-    char *current_date;
+    // Runs on worker threads (the write paths call this), so use ctime_r: the
+    // classic ctime() returns a shared static buffer and is not thread-safe.
+    char current_date[32];
     time_t t;
     time(&t);
-    current_date = ctime(&t);
+    ctime_r(&t, current_date);
     current_date[strcspn(current_date, "\n")] = 0;
     printf("[%s] - ", current_date);
 
