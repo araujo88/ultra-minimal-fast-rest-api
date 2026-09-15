@@ -245,6 +245,31 @@ class TestJsonEscaping:
         assert r.json()["msg"]  # valid JSON error object, not a severed array
         assert healthy(server)  # and the server keeps serving afterwards
 
+    def test_nan_inf_hex_float_round_trip_as_quoted_strings(self, server):
+        """Issue #41: strtod() accepted nan/inf/hex-float as JSON numbers and
+        emitted them bare (unquoted), producing a response that fails to
+        parse as JSON. Values strtod() accepts but JSON does not must come
+        back quoted instead, and genuine numbers must still be emitted bare.
+        """
+        requests.post(f"{server}users",
+                    data={"name": "nan-case", "surname": "X", "age": "nan", "height": "inf"},
+                    timeout=TIMEOUT)
+        requests.post(f"{server}users",
+                    data={"name": "hex-case", "surname": "X", "age": 1, "height": "0x1p4"},
+                    timeout=TIMEOUT)
+
+        # get_list() calls .json(), which raises if the body fails to parse --
+        # this alone reproduces issue #41's JSONDecodeError before the fix.
+        rows = get_list(server)
+
+        nan_row = find_by_name(rows, "nan-case")[0]
+        assert nan_row["age"] == "nan"       # quoted string, not a bare token
+        assert nan_row["height"] == "inf"
+
+        hex_row = find_by_name(rows, "hex-case")[0]
+        assert hex_row["height"] == "0x1p4"  # quoted string, not a bare token
+        assert hex_row["age"] == 1           # genuine number, still bare/unaffected
+
 
 # --------------------------------------------------------------------------- #
 # Client IP allowlist (ALLOWED_HOSTS env override)
