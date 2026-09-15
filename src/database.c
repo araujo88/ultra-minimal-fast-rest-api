@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include <pthread.h>
+#include <ctype.h>
 
 sqlite3 *db;
 
@@ -134,6 +135,49 @@ static void sb_put_json_string(strbuf_t *sb, const char *s)
     sb_putc(sb, '"');
 }
 
+// Returns 1 if `value` matches the strict JSON number grammar
+// (optional '-', digits, optional '.' + digits, optional exponent),
+// 0 otherwise. Deliberately stricter than strtod(): rejects nan, inf,
+// hex floats, leading '+', and bare-dot forms like ".5".
+static int is_valid_json_number(const char *value)
+{
+    const char *p = value;
+
+    if (*p == '-')
+        p++;
+
+    if (!isdigit((unsigned char)*p))
+        return 0;
+
+    if (*p == '0')
+        p++;
+    else
+        while (isdigit((unsigned char)*p))
+            p++;
+
+    if (*p == '.')
+    {
+        p++;
+        if (!isdigit((unsigned char)*p))
+            return 0;
+        while (isdigit((unsigned char)*p))
+            p++;
+    }
+
+    if (*p == 'e' || *p == 'E')
+    {
+        p++;
+        if (*p == '+' || *p == '-')
+            p++;
+        if (!isdigit((unsigned char)*p))
+            return 0;
+        while (isdigit((unsigned char)*p))
+            p++;
+    }
+
+    return *p == '\0';
+}
+
 // Emit a value for a column typed INT/REAL: a bare JSON number when the text
 // is genuinely numeric, JSON null when the column is NULL, otherwise a quoted
 // (escaped) string so the output stays valid JSON.
@@ -144,9 +188,7 @@ static void sb_put_numeric(strbuf_t *sb, const char *value)
         sb_puts(sb, "null");
         return;
     }
-    char *end = NULL;
-    strtod(value, &end);
-    if (end != value && *end == '\0')
+    if (is_valid_json_number(value))
         sb_puts(sb, value); // valid number, emit bare
     else
         sb_put_json_string(sb, value);
